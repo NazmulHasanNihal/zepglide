@@ -1,0 +1,404 @@
+import express from 'express';
+import cors from 'cors';
+import { supabase } from './supabase.js';
+
+const app = express();
+const port = 3001;
+
+app.use(cors());
+app.use(express.json());
+
+// Removed hardcoded DEMO_USER_ID
+
+// Auth middleware helper
+async function getAuthUser(req) {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return null;
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  if (error || !user) return null;
+  return user;
+}
+
+// Helper to ensure profile exists
+async function ensureProfile(userId, email, defaultName = 'Zepglide Transporter') {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error checking profile:', error);
+      return;
+    }
+
+    if (!data) {
+      console.log(`Seeding initial profile for ${userId}...`);
+      const { error: pErr } = await supabase.from('profiles').insert({
+        id: userId,
+        name: defaultName,
+        bio: 'Welcome to the Zepglide mesh.',
+        website: '',
+        email: email,
+        location: '',
+        country_code: 'US',
+        role: 'Node Runner',
+        plan: 'Free'
+      });
+      
+      if (pErr) console.error('Error seeding profile:', pErr);
+      
+      const { error: prefErr } = await supabase.from('preferences').insert({
+        user_id: userId,
+        public_discovery: true,
+        auto_accept: false,
+        strict_e2ee: true,
+        use_web_transport: true,
+        use_web_gpu: true,
+        cloud_bridge_fallback: true
+      });
+      
+      if (prefErr) console.error('Error seeding preferences:', prefErr);
+    }
+  } catch (err) {
+    console.error('Unexpected error in ensureProfile:', err);
+  }
+}
+
+// --- PROFILE ---
+app.get('/api/profile', async (req, res) => {
+  try {
+    const user = await getAuthUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    // The name is passed in identities metadata during signup, optionally grab it
+    const defaultName = user.user_metadata?.name || 'Zepglide Node';
+    await ensureProfile(user.id, user.email, defaultName);
+    
+    const { data: profile, error: pErr } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
+    const { data: preferences, error: prefErr } = await supabase.from('preferences').select('*').eq('user_id', user.id).maybeSingle();
+    
+    if (!profile || !preferences) {
+      console.warn('Profile or preferences still missing after ensureProfile');
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    // Map back to camelCase for the frontend
+    res.json({
+      profile: {
+        ...profile,
+        countryCode: profile.country_code
+      },
+      preferences: {
+        publicDiscovery: preferences.public_discovery,
+        autoAccept: preferences.auto_accept,
+        strictE2EE: preferences.strict_e2ee,
+        useWebTransport: preferences.use_web_transport,
+        useWebGPU: preferences.use_web_gpu,
+        cloudBridgeFallback: preferences.cloud_bridge_fallback
+      }
+    });
+  } catch (err) {
+    console.error('Error in GET /api/profile:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/profile', async (req, res) => {
+  const user = await getAuthUser(req);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { profile, preferences } = req.body;
+  
+  if (profile) {
+    const pUpdate = { ...profile };
+    if (pUpdate.countryCode) {
+      pUpdate.country_code = pUpdate.countryCode;
+      delete pUpdate.countryCode;
+    }
+    await supabase.from('profiles').update(pUpdate).eq('id', user.id);
+  }
+  
+  if (preferences) {
+    const prefUpdate = {};
+    if ('publicDiscovery' in preferences) prefUpdate.public_discovery = preferences.publicDiscovery;
+    if ('autoAccept' in preferences) prefUpdate.auto_accept = preferences.autoAccept;
+    if ('strictE2EE' in preferences) prefUpdate.strict_e2ee = preferences.strictE2EE;
+    if ('useWebTransport' in preferences) prefUpdate.use_web_transport = preferences.useWebTransport;
+    if ('useWebGPU' in preferences) prefUpdate.use_web_gpu = preferences.useWebGPU;
+    if ('cloudBridgeFallback' in preferences) prefUpdate.cloud_bridge_fallback = preferences.cloudBridgeFallback;
+    
+    await supabase.from('preferences').update(prefUpdate).eq('user_id', user.id);
+  }
+  
+  res.json({ success: true });
+});
+
+// --- HISTORY ---
+app.get('/api/history', async (req, res) => {
+  const user = await getAuthUser(req);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { data, error } = await supabase
+    .from('transfers')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false });
+    
+  // Map 'recipient' from DB to 'to' for frontend compatibility
+  const history = data?.map(h => ({
+    ...h,
+    to: h.recipient
+  })) || [];
+  
+  res.json(history);
+});
+
+app.post('/api/transfers', async (req, res) => {
+  const user = await getAuthUser(req);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { name, size, to, status } = req.body;
+  
+  const { data, error } = await supabase.from('transfers').insert({
+    user_id: user.id,
+    name,
+    size,
+    recipient: to || 'Unknown',
+    status: status || 'Complete'
+  }).select().single();
+  
+  res.json({ success: true, transfer: { ...data, to: data.recipient } });
+});
+// --- PROFILE STATS ---
+app.get('/api/profile/stats', async (req, res) => {
+  const user = await getAuthUser(req);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const { data: transfers, error } = await supabase
+      .from('transfers')
+      .select('size, status, created_at')
+      .eq('user_id', user.id);
+
+    if (error) throw error;
+
+    const totalHandshakes = transfers?.length || 0;
+    
+    // Parse sizes like "2.4 GB", "150 MB", "Batch Size"
+    let totalSentBytes = 0;
+    transfers?.forEach(t => {
+      const sizeStr = t.size || '';
+      const match = sizeStr.match(/([\d.]+)\s*(GB|MB|KB|TB)/i);
+      if (match) {
+        const val = parseFloat(match[1]);
+        const unit = match[2].toUpperCase();
+        if (unit === 'TB') totalSentBytes += val * 1024;
+        else if (unit === 'GB') totalSentBytes += val;
+        else if (unit === 'MB') totalSentBytes += val / 1024;
+        else if (unit === 'KB') totalSentBytes += val / (1024 * 1024);
+      }
+    });
+
+    // Calculate trust based on real factors
+    let trustScore = 50; // Base
+    if (user.email_confirmed_at) trustScore += 25;
+    if (totalHandshakes > 0) trustScore += 10;
+    if (totalHandshakes > 5) trustScore += 10;
+    if (totalHandshakes > 20) trustScore += 5;
+    trustScore = Math.min(trustScore, 100);
+
+    // Recent 4 activities
+    const recentTransfers = transfers
+      ?.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .slice(0, 4)
+      .map(t => ({
+        action: t.status === 'Complete' ? 'Mirror Handshake' : 'Transfer Session',
+        target: t.size,
+        time: getTimeAgo(new Date(t.created_at))
+      })) || [];
+
+    res.json({
+      totalHandshakes,
+      totalSent: totalSentBytes >= 1 ? `${totalSentBytes.toFixed(1)} GB` : `${(totalSentBytes * 1024).toFixed(0)} MB`,
+      totalReceived: '0 MB', // We only track sends from this user's perspective
+      trustScore,
+      storageUsed: totalSentBytes.toFixed(1),
+      storageLimit: 50,
+      recentActivity: recentTransfers
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+function getTimeAgo(date) {
+  const seconds = Math.floor((new Date() - date) / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+// --- ADMIN MANAGEMENT ---
+app.get('/api/admin/users', async (req, res) => {
+  const user = await getAuthUser(req);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+  // Only admin can access
+  if (user.email !== 'nazmulhas36@gmail.com') return res.status(403).json({ error: 'Forbidden' });
+
+  const { data: profiles, error } = await supabase
+    .from('profiles')
+    .select('id, name, email, plan, role, country_code');
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  // Get transfer sizes per user
+  const users = [];
+  for (const p of profiles) {
+    const { count } = await supabase.from('transfers').select('*', { count: 'exact', head: true }).eq('user_id', p.id);
+    users.push({
+      id: p.id.substring(0, 8),
+      email: p.email || p.name,
+      plan: p.plan || 'Free',
+      bw: `${count || 0} transfers`,
+      status: 'Active',
+      region: p.country_code || 'US'
+    });
+  }
+
+  res.json(users);
+});
+
+app.get('/api/admin/transfers', async (req, res) => {
+  const user = await getAuthUser(req);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+  if (user.email !== 'nazmulhas36@gmail.com') return res.status(403).json({ error: 'Forbidden' });
+
+  const { data, error } = await supabase
+    .from('transfers')
+    .select('id, name, size, status, created_at')
+    .order('created_at', { ascending: false })
+    .limit(10);
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  const transfers = data.map(t => ({
+    id: `tx_${t.id.substring(0, 4)}`,
+    file: t.name,
+    size: t.size,
+    type: 'P2P (WebRTC)',
+    status: t.status,
+    speed: '--'
+  }));
+
+  res.json(transfers);
+});
+
+// --- DEVICES ---
+app.get('/api/devices', async (req, res) => {
+  const user = await getAuthUser(req);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+  // For this prototype, we'll represent active profiles as trusted devices
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, name, location, role');
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  const devices = data.map(p => ({
+     id: p.id,
+     name: p.name,
+     type: p.role.includes('Mobile') ? 'Mobile' : 'Desktop',
+     os: 'Encrypted OS',
+     status: 'Online',
+     lastSeen: 'Now',
+     location: p.location || 'Global Mesh',
+     ip: 'Masked',
+     isCurrent: p.id === user.id
+  }));
+
+  res.json(devices);
+});
+
+app.get('/api/map', async (req, res) => {
+  try {
+    const { data, error } = await supabase.from('profiles').select('country_code');
+    if (error) throw error;
+    
+    // Aggregate by country code, but we need full country names for the map
+    // We'll just return a simplified array and let the frontend map it if needed
+    // However, since we don't have proper IP geolocation in this prototype, 
+    // we'll return the hardcoded default country 'United States of America (USA)' as a fallback for 'US'
+    const countryMap = {
+      'US': 'United States of America (USA)',
+      'BD': 'Bangladesh',
+      'DE': 'Germany',
+      'UK': 'United Kingdom (UK)'
+    };
+
+    const aggregated = {};
+    data.forEach(p => {
+       const mappedName = countryMap[p.country_code] || 'United States of America (USA)';
+       aggregated[mappedName] = (aggregated[mappedName] || 0) + 1;
+    });
+
+    res.json(aggregated);
+  } catch (err) {
+    res.json({});
+  }
+});
+
+app.get('/api/telemetry', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('transfers')
+      .select('id, size, status, created_at')
+      .order('created_at', { ascending: false })
+      .limit(5);
+    
+    if (error) throw error;
+    
+    const events = data.map((t, index) => ({
+       id: t.id || index,
+       type: t.status === 'Complete' ? 'Sync' : 'Transfer',
+       msg: `Transfer ${t.id.split('-')[0] || 'Unknown'} - ${t.size}`,
+       time: new Date(t.created_at).toLocaleTimeString()
+    }));
+    
+    res.json(events);
+  } catch (err) {
+    res.json([]);
+  }
+});
+
+// --- ADMIN ---
+app.get('/api/admin/metrics', async (req, res) => {
+  try {
+    const user = await getAuthUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { count: nodesOnline } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
+    const { count: activeTransfers } = await supabase.from('transfers').select('*', { count: 'exact', head: true });
+    
+    // We don't have traffic metrics without a timeseries db, so we calculate an average based on count
+    const trafficRate = activeTransfers > 0 ? `${(activeTransfers * 2.4).toFixed(1)} req/s` : '0 req/s';
+
+    res.json({
+      activeTransfers: activeTransfers || 0,
+      nodesOnline: nodesOnline || 0,
+      trafficRate,
+      health: nodesOnline > 0 ? 'Optimal' : 'Connecting'
+    });
+  } catch (err) {
+    res.json({ activeTransfers: 0, nodesOnline: 0, trafficRate: '0 req/s', health: 'Error' });
+  }
+});
+
+app.listen(port, () => {
+  console.log(`🚀 Zepglide Backend with Supabase listening at http://localhost:${port}`);
+});

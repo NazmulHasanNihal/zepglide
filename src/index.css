@@ -1,0 +1,168 @@
+@import "tailwindcss";
+
+:root {
+  --bg-main: #F8FAFC;
+  --bg-surface: #FFFFFF;
+  --text-main: #0F172A;
+  --text-muted: #475569;
+  --border-main: rgba(15, 23, 42, 0.08);
+  --bg-hover: #F1F5F9;
+  --primary: #00ADB5;
+  --primary-10: rgba(0, 173, 181, 0.1);
+  --primary-20: rgba(0, 173, 181, 0.2);
+  --primary-30: rgba(0, 173, 181, 0.3);
+  --primary-50: rgba(0, 173, 181, 0.5);
+  --primary-content: #FFFFFF;
+  --success: #00ADB5;
+  --success-10: rgba(0, 173, 181, 0.1);
+  --success-20: rgba(0, 173, 181, 0.2);
+  --danger: #F43F5E;
+  --danger-10: rgba(244, 63, 94, 0.1);
+  --danger-20: rgba(244, 63, 94, 0.2);
+  --danger-30: rgba(244, 63, 94, 0.3);
+  --warning: #F59E0B;
+  --warning-10: rgba(245, 158, 11, 0.1);
+  --warning-20: rgba(245, 158, 11, 0.2);
+  --warning-30: rgba(245, 158, 11, 0.3);
+  --accent: #8B5CF6;
+  --accent-10: rgba(139, 92, 246, 0.1);
+  --accent-20: rgba(139, 92, 246, 0.2);
+  --accent-30: rgba(139, 92, 246, 0.3);
+}
+
+.dark {
+  --bg-main: #1E293B;
+  --bg-surface: #334155;
+  --text-main: #F8FAFC;
+  --text-muted: #94A3B8;
+  --border-main: rgba(255, 255, 255, 0.1);
+  --bg-hover: #475569;
+}
+
+@theme {
+  --font-sans: "Cascadia Code", Consolas, Monaco, monospace;
+  --color-border: var(--border-main);
+  --color-background: var(--bg-main);
+  --color-foreground: var(--text-main);
+  --color-muted: var(--text-muted);
+}
+
+@layer base {
+  * {
+    font-family: var(--font-sans) !important;
+    border-color: var(--border-main);
+  }
+  body {
+    background-color: var(--bg-main);
+    color: var(--text-main);
+    transition: background-color 0.5s ease-out, color 0.5s ease-out;
+  }
+}
+
+/* --- PREMIUM ANIMATIONS --- */
+
+@keyframes in {
+  from { opacity: 0; transform: translateY(var(--tw-enter-translate-y, 0)) scale(var(--tw-enter-scale, 1)); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes ping-slow {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(2); opacity: 0; }
+}
+
+@keyframes radar-sweep {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.animate-in { animation: in 0.5s ease-out forwards; }
+.animate-ping-slow { animation: ping-slow 2s cubic-bezier(0, 0, 0.2, 1) infinite; }
+.animate-radar { animation: radar-sweep 4s linear infinite; }
+.animate-float { animation: float 3s ease-in-out infinite; }
+
+.fade-in { --tw-enter-opacity: 0; }
+.slide-in-from-bottom-8 { --tw-enter-translate-y: 2rem; }
+.slide-in-from-bottom-4 { --tw-enter-translate-y: 1rem; }
+.slide-in-from-top-2 { --tw-enter-translate-y: -0.5rem; }
+.slide-in-from-right-8 { --tw-enter-translate-x: 2rem; }
+.zoom-in-95 { --tw-enter-scale: 0.95; }
+.zoom-in-90 { --tw-enter-scale: 0.9; }
+
+.duration-700 { animation-duration: 700ms; }
+.duration-500 { animation-duration: 500ms; }
+.duration-300 { animation-duration: 300ms; }
+.duration-200 { animation-duration: 200ms; }
+
+.fill-mode-both { animation-fill-mode: both; }
+
+/* --- RESPONSIVE TERMINAL UTILITIES --- */
+
+.responsive-table-grid {
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 768px) {
+  .responsive-table-grid thead { display: none; }
+  .responsive-table-grid tr {
+    display: flex;
+    flex-direction: column;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    background: var(--bg-main);
+    border-radius: 1.5rem;
+    border: 1px solid var(--border-main);
+  }
+  .responsive-table-grid td {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5rem 0 !important;
+    border: none !important;
+  }
+  .responsive-table-grid td::before {
+    content: attr(data-label);
+    font-size: 9px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    opacity: 0.6;
+  }
+}
+
+@keyframes biometric-pulse {
+  0% { transform: scale(1); opacity: 0.5; box-shadow: 0 0 0 0 var(--primary-50); }
+  70% { transform: scale(1.1); opacity: 1; box-shadow: 0 0 0 10px rgba(0, 0, 0, 0); }
+  100% { transform: scale(1); opacity: 0.5; box-shadow: 0 0 0 0 rgba(0, 0, 0, 0); }
+}
+
+.animate-biometric { animation: biometric-pulse 2s infinite ease-in-out; }
+
+@keyframes data-flow {
+  0% { transform: translateX(-100%); opacity: 0; }
+  50% { opacity: 1; }
+  100% { transform: translateX(100%); opacity: 0; }
+}
+
+@keyframes pulse-slow-glow {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.05); }
+}
+
+.animate-data-flow { animation: data-flow 2s linear infinite; }
+.animate-pulse-slow { animation: pulse-slow-glow 3s ease-in-out infinite; }
+
+/* Custom Scrollbar for Cyber feel */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-main); }
+::-webkit-scrollbar-thumb { 
+  background: var(--border-main); 
+  border-radius: 10px; 
+}
+::-webkit-scrollbar-thumb:hover { background: var(--primary-30); }

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Zepglide Signaling Tester</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .card { background: #1e293b; padding: 2rem; border-radius: 1.5rem; border: 1px solid #334155; width: 400px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
+        h1 { margin-top: 0; color: #00ADB5; font-size: 1.5rem; text-transform: uppercase; letter-spacing: 2px; }
+        input { width: 100%; padding: 0.75rem; background: #0f172a; border: 1px solid #334155; border-radius: 0.75rem; color: #00ADB5; font-weight: bold; font-size: 1.2rem; text-align: center; margin: 1rem 0; box-sizing: border-box; }
+        .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        button { padding: 0.75rem; border-radius: 0.75rem; border: none; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        button.primary { background: #00ADB5; color: white; }
+        button.secondary { background: #334155; color: white; }
+        button:hover { filter: brightness(1.2); transform: translateY(-2px); }
+        #log { margin-top: 1.5rem; height: 150px; overflow-y: auto; background: #0f172a; padding: 0.75rem; border-radius: 0.75rem; font-family: monospace; font-size: 0.8rem; border: 1px solid #334155; color: #94a3b8; }
+        .status { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: #64748b; margin-bottom: 0.5rem; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Zepglide Signaling</h1>
+        <div class="status" id="conn-status">Disconnected</div>
+        <input type="text" id="pin" placeholder="Enter 6-digit PIN" maxlength="6" value="123456">
+        <div class="btns">
+            <button class="primary" onclick="createRoom()">Create Room</button>
+            <button class="secondary" onclick="joinRoom()">Join Room</button>
+        </div>
+        <button class="primary" style="width: 100%; margin-top: 10px; background: #8B5CF6;" onclick="sendSignal()">Send Mock Signal</button>
+        <div id="log"></div>
+    </div>
+
+    <script>
+        const socket = io('http://localhost:3001');
+        const log = document.getElementById('log');
+        const status = document.getElementById('conn-status');
+
+        function writeLog(msg, color = '#94a3b8') {
+            const time = new Date().toLocaleTimeString();
+            log.innerHTML += `<div style="color: ${color}">[${time}] ${msg}</div>`;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        socket.on('connect', () => {
+            status.innerText = 'Connected to Server (Port: 3001)';
+            status.style.color = '#10B981';
+            writeLog('Socket Connected!', '#10B981');
+        });
+
+        socket.on('peer-joined', () => {
+            writeLog('🤝 PEER DETECTED! Handshake established.', '#8B5CF6');
+        });
+
+        socket.on('signal', (data) => {
+            writeLog(`📥 SIGNAL IN: ${JSON.stringify(data)}`, '#00ADB5');
+        });
+
+        socket.on('room-error', (err) => {
+            writeLog(`❌ ERROR: ${err.message}`, '#EF4444');
+        });
+
+        function createRoom() {
+            const pin = document.getElementById('pin').value;
+            socket.emit('create-room', pin);
+            writeLog(`Room ${pin} created. Waiting for peer...`);
+        }
+
+        function joinRoom() {
+            const pin = document.getElementById('pin').value;
+            socket.emit('join-room', pin);
+            writeLog(`Attempting to join room ${pin}...`);
+        }
+
+        function sendSignal() {
+            const pin = document.getElementById('pin').value;
+            const data = { type: 'offer', timestamp: Date.now() };
+            socket.emit('signal', { pin, signalData: data });
+            writeLog(`📤 SIGNAL OUT: Mock Signal Sent`, '#F59E0B');
+        }
+    </script>
+</body>
+</html>
