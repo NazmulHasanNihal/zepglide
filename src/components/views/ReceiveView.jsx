@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Download, Radar, CheckCircle2, FileText, Smartphone, Gauge, Activity, Clock, ShieldAlert, RefreshCw, File as FileIcon, ShieldCheck, Zap, Lock } from 'lucide-react';
+import { Download, Radar, CheckCircle2, FileText, Smartphone, Gauge, Activity, Clock, ShieldAlert, RefreshCw, File as FileIcon, ShieldCheck, Zap, Lock, ScanLine, X } from 'lucide-react';
 import { useWebRTC } from '../../hooks/useWebRTC';
+import { Scanner } from '@yudiel/react-qr-scanner';
 
 export default function ReceiveView({ showToast, playSfx }) {
   const [pin, setPin] = useState('');
   const [password, setPassword] = useState('');
+  const [isScanning, setIsScanning] = useState(false);
   const { status, progress, speed, eta, metadata, receivedFile, errorMsg, joinSession, cancelTransfer, retryTransfer, isSocketConnected } = useWebRTC();
   
   const facts = ["Bypassing Symmetric NAT...", "Establishing Quantum-Safe Keys...", "Securing P2P WebRTC Layer...", "Discovering Mesh Route..."];
@@ -277,6 +279,51 @@ export default function ReceiveView({ showToast, playSfx }) {
                   className="bg-transparent border-none text-sm font-bold text-[var(--text-main)] w-full focus:outline-none"
                 />
               </div>
+
+              {isScanning ? (
+                 <div className="w-full max-w-xs mx-auto mb-6 bg-black rounded-2xl overflow-hidden shadow-xl border-2 border-[var(--primary)] relative group">
+                    <Scanner 
+                       onScan={(result) => {
+                          if (result && result.length > 0) {
+                             const text = result[0].rawValue;
+                             try {
+                                const url = new URL(text);
+                                const scannedPin = url.searchParams.get('pin');
+                                if (scannedPin && scannedPin.length === 6) {
+                                   setPin(scannedPin);
+                                   setIsScanning(false);
+                                   showToast("QR Code Scanned Successfully!", "success");
+                                   // Auto join
+                                   joinSession(scannedPin, password);
+                                }
+                             } catch (e) {
+                                if (text.length === 6 && /^\d+$/.test(text)) {
+                                   setPin(text);
+                                   setIsScanning(false);
+                                   showToast("PIN Scanned Successfully!", "success");
+                                   joinSession(text, password);
+                                }
+                             }
+                          }
+                       }}
+                       onError={(err) => {
+                          showToast("Camera access denied or failed.", "error");
+                          setIsScanning(false);
+                       }}
+                       components={{ audio: false }}
+                    />
+                    <button onClick={() => setIsScanning(false)} className="absolute top-2 right-2 bg-black/50 text-white p-2 rounded-full hover:bg-red-500 transition-colors">
+                       <X size={16} />
+                   </button>
+                 </div>
+              ) : (
+                <button 
+                  onClick={() => setIsScanning(true)} 
+                  className="w-full max-w-xs mx-auto mb-6 bg-[var(--bg-main)] border border-[var(--border-main)] text-[var(--text-main)] hover:bg-[var(--primary-10)] hover:text-[var(--primary)] hover:border-[var(--primary-30)] font-black py-3 rounded-2xl transition-all duration-300 uppercase tracking-widest text-xs flex items-center justify-center gap-2"
+                >
+                  <ScanLine size={16} /> Scan QR Code
+                </button>
+              )}
 
               <button 
                 disabled={!isSocketConnected}

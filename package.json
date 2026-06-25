@@ -13,10 +13,12 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.101.1",
+    "@yudiel/react-qr-scanner": "^2.6.0",
     "clsx": "^2.1.1",
     "cors": "^2.8.5",
     "dotenv": "^17.4.0",
     "express": "^4.21.2",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.477.0",
     "qrcode.react": "^4.2.0",
     "react": "^19.0.0",
