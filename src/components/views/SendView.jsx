@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UploadCloud, Video, File as FileIcon, X, ShieldCheck, Zap, RefreshCw, Network, Cpu, Wifi, CheckCircle2, Laptop, Smartphone, Download, Gauge, Activity, Clock, Lock, Users, Copy, Check } from 'lucide-react';
+import { UploadCloud, Video, File as FileIcon, X, ShieldCheck, Zap, RefreshCw, Network, Cpu, Wifi, CheckCircle2, Laptop, Smartphone, Download, Gauge, Activity, Clock, Lock, Users, Copy, Check, Plus } from 'lucide-react';
 import { useWebRTC } from '../../hooks/useWebRTC';
 import { supabase } from '../../lib/supabase';
 import { QRCodeSVG } from 'qrcode.react';
@@ -8,20 +8,22 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
   const [dragActive, setDragActive] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [rawFiles, setRawFiles] = useState([]);
-  const [routingState, setRoutingState] = useState('evaluating');
+  const [routingState, setRoutingState] = useState('idle'); // idle, evaluating, quic
   const [pin, setPin] = useState('');
   const [password, setPassword] = useState('');
   const [isMultiPeer, setIsMultiPeer] = useState(false);
+  const [sessionStarted, setSessionStarted] = useState(false);
 
   const { status, progress, speed, eta, startSession, sendFiles, cancelTransfer, retryTransfer } = useWebRTC();
   const fileInputRef = React.useRef(null);
-  const [cancelStep, setCancelStep] = useState(0); // 0: idle, 1: double-confirm
+  const [cancelStep, setCancelStep] = useState(0);
 
   const isPro = profile?.plan === 'Pro' || profile?.plan === 'Teams';
 
+  // Handle global dropped file (from Dashboard drag-drop)
   useEffect(() => {
     if (globalDroppedFile) {
-      handleFiles([globalDroppedFile]);
+      addFiles([globalDroppedFile]);
       setGlobalDroppedFile(null);
     }
   }, [globalDroppedFile, setGlobalDroppedFile]);
@@ -32,44 +34,75 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
 
   const handleFileInputChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
-      handleFiles(Array.from(e.target.files));
+      addFiles(Array.from(e.target.files));
+    }
+    // Reset input so the same file can be selected again
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // APPEND files instead of replacing
+  const addFiles = (filesArray) => {
+    const newRaw = [];
+    const newMeta = [];
+
+    filesArray.forEach((file) => {
+      if (!(file instanceof File)) return;
+      
+      // Skip duplicates (same name + size)
+      const isDuplicate = rawFiles.some(f => f.name === file.name && f.size === file.size);
+      if (isDuplicate) return;
+
+      let previewUrl = null;
+      if (file.type?.startsWith('image/') || file.type?.startsWith('video/')) {
+        previewUrl = URL.createObjectURL(file);
+      }
+
+      newRaw.push(file);
+      newMeta.push({
+        name: file.name,
+        size: formatFileSize(file.size),
+        rawSize: file.size,
+        isVideo: file.type?.startsWith('video/'),
+        previewUrl
+      });
+    });
+
+    if (newRaw.length > 0) {
+      setRawFiles(prev => [...prev, ...newRaw]);
+      setSelectedFiles(prev => [...prev, ...newMeta]);
     }
   };
 
-  const handleFiles = (filesArray) => {
-    const rawBuffer = [];
-    const metaBuffer = [];
+  // Remove a single file from selection
+  const removeFile = (index) => {
+    const file = selectedFiles[index];
+    if (file?.previewUrl) URL.revokeObjectURL(file.previewUrl);
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+    setRawFiles(prev => prev.filter((_, i) => i !== index));
+  };
 
-    filesArray.forEach((fileOrMock) => {
-      let name, size, isVideo, previewUrl = null, fileObj = null;
-
-      if (fileOrMock instanceof File) {
-        fileObj = fileOrMock;
-        name = fileOrMock.name;
-        size = (fileOrMock.size / (1024 * 1024)).toFixed(2) + " MB";
-        isVideo = fileOrMock.type?.startsWith('video/');
-        if (fileOrMock.type?.startsWith('image/') || fileOrMock.type?.startsWith('video/')) {
-          previewUrl = URL.createObjectURL(fileOrMock);
-        }
-      } else {
-        name = fileOrMock;
-        size = "15.8 MB";
-        isVideo = true;
-        fileObj = new File(["mock binary data"], name, { type: "video/mp4" });
-      }
-
-      rawBuffer.push(fileObj);
-      metaBuffer.push({ name, size, isVideo, previewUrl });
+  // Clear all files and reset state
+  const clearAll = () => {
+    selectedFiles.forEach(file => {
+      if (file?.previewUrl) URL.revokeObjectURL(file.previewUrl);
     });
+    setSelectedFiles([]);
+    setRawFiles([]);
+    setPin('');
+    setSessionStarted(false);
+    setRoutingState('idle');
+  };
 
-    setRawFiles(rawBuffer);
-    setSelectedFiles(metaBuffer);
-    setRoutingState('evaluating');
+  // Generate PIN and start signaling session
+  const handleReadyToSend = () => {
+    if (rawFiles.length === 0) return;
     
     const newPin = Math.floor(100000 + Math.random() * 900000).toString();
     setPin(newPin);
-    
-    setTimeout(() => { 
+    setSessionStarted(true);
+    setRoutingState('evaluating');
+
+    setTimeout(() => {
       setRoutingState('quic');
       startSession(newPin, password, isMultiPeer);
     }, 1500);
@@ -79,7 +112,7 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
     if (status === 'connected') {
       sendFiles(rawFiles);
     } else {
-      showToast("Waiting for peer to bond...", "info");
+      showToast("Waiting for peer to connect...", "info");
     }
   };
 
@@ -90,10 +123,12 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
     } else {
       cancelTransfer();
       setCancelStep(0);
-      showToast("Sync Aborted", "error");
+      clearAll();
+      showToast("Transfer Cancelled", "error");
     }
   };
 
+  // Sync to history on success
   useEffect(() => {
     if (status === 'success') {
       showToast("Transfer Complete! Files synced.", "success");
@@ -104,6 +139,8 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
           const token = session?.access_token;
           if (!token) return;
 
+          const totalSize = rawFiles.reduce((acc, f) => acc + f.size, 0);
+
           await fetch((import.meta.env.VITE_API_URL || '') + '/api/transfers', {
             method: 'POST',
             headers: { 
@@ -111,8 +148,8 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
               'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify({
-              name: selectedFiles.length > 1 ? `${selectedFiles.length} files (Batch)` : selectedFiles[0].name,
-              size: "Batch Size",
+              name: selectedFiles.length > 1 ? `${selectedFiles.length} files (Batch)` : selectedFiles[0]?.name || 'Unknown',
+              size: formatFileSize(totalSize),
               to: 'Remote Node',
               status: 'Complete'
             })
@@ -121,19 +158,21 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
       };
       syncHistory();
     }
-  }, [status, selectedFiles, showToast]);
+  }, [status]);
 
+  // Cleanup preview URLs on unmount
   useEffect(() => {
     return () => { 
       selectedFiles.forEach(file => {
         if (file?.previewUrl) URL.revokeObjectURL(file.previewUrl);
       });
     };
-  }, [selectedFiles]);
+  }, []);
 
   return (
     <div className="flex flex-col gap-6 w-full max-w-2xl mx-auto mt-4 md:mt-8">
       {selectedFiles.length === 0 ? (
+        /* ====== DROP ZONE (No files selected) ====== */
         <div 
           onClick={handleBrowseClick}
           className={`relative border-2 border-dashed rounded-[2.5rem] p-8 md:p-16 text-center transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)] flex flex-col items-center justify-center min-h-[400px] md:min-h-[500px] shadow-sm cursor-pointer ${
@@ -147,7 +186,7 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
           onDrop={(e) => { 
             e.preventDefault(); setDragActive(false); 
             if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-              handleFiles(Array.from(e.dataTransfer.files));
+              addFiles(Array.from(e.dataTransfer.files));
             }
           }}
         >
@@ -162,10 +201,62 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
             <UploadCloud size={48} className={dragActive ? 'animate-bounce' : ''} />
           </div>
           <h3 className="text-2xl md:text-3xl font-black text-[var(--text-main)] mb-3 tracking-tighter uppercase">Drop Files or Click to Browse</h3>
-          <p className="text-xs font-black text-[var(--text-muted)] uppercase tracking-widest mb-10">P2P Encryption Active</p>
+          <p className="text-xs font-black text-[var(--text-muted)] uppercase tracking-widest mb-10">P2P Encryption Active • Select Multiple Files</p>
           
+          <div className="flex flex-wrap justify-center gap-4">
+            <button className="bg-[var(--text-main)] text-[var(--bg-main)] hover:scale-105 active:scale-95 px-8 py-4 rounded-2xl font-black text-xs tracking-widest uppercase transition-all duration-300 shadow-xl flex items-center gap-2" onClick={(e) => { e.stopPropagation(); handleBrowseClick(); }}>
+              <Download size={16} className="rotate-180" /> Select Files
+            </button>
+          </div>
+        </div>
+      ) : !sessionStarted ? (
+        /* ====== FILE LIST (Files selected, session NOT started yet) ====== */
+        <div className="bg-[var(--bg-surface)] border border-[var(--border-main)] rounded-[3rem] p-8 md:p-12 shadow-2xl transition-all animate-in zoom-in-95 duration-500 text-[var(--text-main)]">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-lg font-black uppercase tracking-widest text-[var(--text-muted)] text-[10px]">Selected Files ({selectedFiles.length})</h3>
+            <button onClick={clearAll} className="p-2 text-[var(--danger)] hover:bg-[var(--danger-10)] rounded-full transition-all active:scale-90">
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-3 max-h-[300px] overflow-y-auto custom-scrollbar mb-6">
+            {selectedFiles.map((file, idx) => (
+              <div key={idx} className="flex items-center gap-4 overflow-hidden bg-[var(--bg-main)] p-3 rounded-2xl border border-[var(--border-main)] group">
+                <div className={`h-12 w-12 rounded-[1rem] flex items-center justify-center shrink-0 border relative overflow-hidden ${file.isVideo ? 'bg-[var(--accent-10)] text-[var(--accent)] border-[var(--accent-20)]' : 'bg-[var(--primary-10)] text-[var(--primary)] border-[var(--primary-20)]'}`}>
+                  {file.previewUrl && (
+                     <img src={file.previewUrl} alt="preview" className="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-overlay blur-[1px]" />
+                  )}
+                  <div className="relative z-10">{file.isVideo ? <Video size={20} /> : <FileIcon size={20} />}</div>
+                </div>
+                <div className="overflow-hidden flex-1">
+                  <h3 className="text-sm font-black text-[var(--text-main)] truncate tracking-tighter w-full">{file.name}</h3>
+                  <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.2em]">{file.size}</p>
+                </div>
+                <button onClick={() => removeFile(idx)} className="p-2 text-[var(--text-muted)] hover:text-[var(--danger)] hover:bg-[var(--danger-10)] rounded-full transition-all opacity-0 group-hover:opacity-100 active:scale-90 shrink-0">
+                  <X size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Add more files button */}
+          <button 
+            onClick={handleBrowseClick}
+            className="w-full border-2 border-dashed border-[var(--border-main)] hover:border-[var(--primary-30)] text-[var(--text-muted)] hover:text-[var(--primary)] rounded-2xl p-4 font-black text-xs uppercase tracking-widest transition-all mb-6 flex items-center justify-center gap-2 hover:bg-[var(--primary-10)] active:scale-[0.98]"
+          >
+            <Plus size={16} /> Add More Files
+          </button>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleFileInputChange} 
+            className="hidden" 
+            multiple
+          />
+
+          {/* Pro options */}
           {isPro && (
-            <div onClick={(e) => e.stopPropagation()} className="w-full max-w-sm flex flex-col gap-3 mb-6 bg-[var(--bg-main)] p-4 rounded-2xl border border-[var(--border-main)]">
+            <div className="w-full flex flex-col gap-3 mb-6 bg-[var(--bg-main)] p-4 rounded-2xl border border-[var(--border-main)]">
               <div className="flex items-center justify-between">
                  <span className="text-xs font-black text-[var(--text-muted)] uppercase tracking-widest flex items-center gap-2"><Lock size={14}/> Optional Password</span>
               </div>
@@ -179,25 +270,27 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
               
               <div className="flex items-center justify-between mt-2 pt-3 border-t border-[var(--border-main)]">
                  <span className="text-xs font-black text-[var(--text-muted)] uppercase tracking-widest flex items-center gap-2"><Users size={14}/> Multi-Broadcaster</span>
-                 <div className="flex items-center gap-2">
-                   <input type="checkbox" checked={isMultiPeer} onChange={(e) => setIsMultiPeer(e.target.checked)} className="accent-[var(--primary)] w-4 h-4" />
-                 </div>
+                 <input type="checkbox" checked={isMultiPeer} onChange={(e) => setIsMultiPeer(e.target.checked)} className="accent-[var(--primary)] w-4 h-4" />
               </div>
             </div>
           )}
 
-          <div className="flex flex-wrap justify-center gap-4">
-            <button className="bg-[var(--text-main)] text-[var(--bg-main)] hover:scale-105 active:scale-95 px-8 py-4 rounded-2xl font-black text-xs tracking-widest uppercase transition-all duration-300 shadow-xl flex items-center gap-2" onClick={(e) => { e.stopPropagation(); handleBrowseClick(); }}>
-              <Download size={16} className="rotate-180" /> Select Files
-            </button>
-          </div>
+          {/* Ready to Send button */}
+          <button 
+            onClick={handleReadyToSend}
+            className="w-full bg-[var(--text-main)] text-[var(--bg-main)] hover:scale-[1.02] active:scale-95 font-black py-5 rounded-2xl transition-all duration-300 shadow-2xl flex items-center justify-center gap-3 uppercase tracking-widest text-xs"
+          >
+            <Zap size={20} className="fill-current shrink-0" /> Ready to Send
+          </button>
         </div>
       ) : (
+        /* ====== ACTIVE SESSION (PIN generated, waiting/transferring/done) ====== */
         <div className="bg-[var(--bg-surface)] border border-[var(--border-main)] rounded-[3rem] p-8 md:p-12 shadow-2xl transition-all animate-in zoom-in-95 duration-500 text-[var(--text-main)]">
+          {/* File list summary */}
           <div className="flex justify-between items-start mb-8 gap-4">
             <div className="w-full flex flex-col gap-3">
               {selectedFiles.map((file, idx) => (
-                <div key={idx} className="flex items-center gap-4 overflow-hidden bg-[var(--bg-main)] p-3 rounded-2xl border border-[var(--border-main)] relative group">
+                <div key={idx} className="flex items-center gap-4 overflow-hidden bg-[var(--bg-main)] p-3 rounded-2xl border border-[var(--border-main)]">
                   <div className={`h-12 w-12 rounded-[1rem] flex items-center justify-center shrink-0 border relative overflow-hidden ${file.isVideo ? 'bg-[var(--accent-10)] text-[var(--accent)] border-[var(--accent-20)]' : 'bg-[var(--primary-10)] text-[var(--primary)] border-[var(--primary-20)]'}`}>
                     {file.previewUrl && (
                        <img src={file.previewUrl} alt="preview" className="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-overlay blur-[1px]" />
@@ -206,18 +299,17 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
                   </div>
                   <div className="overflow-hidden flex-1">
                     <h3 className="text-sm font-black text-[var(--text-main)] truncate tracking-tighter w-full">{file.name}</h3>
-                    <div className="flex items-center gap-3 mt-0.5">
-                      <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.2em]">{file.size}</p>
-                    </div>
+                    <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.2em]">{file.size}</p>
                   </div>
                 </div>
               ))}
             </div>
             {(status === 'idle' || status === 'connecting' || status === 'connected') && (
-              <button onClick={() => { setSelectedFiles([]); setRawFiles([]); }} className="p-3 bg-[var(--danger-10)] text-[var(--danger)] hover:bg-[var(--danger)] hover:text-white rounded-full transition-all duration-300 active:scale-90"><X size={20} /></button>
+              <button onClick={() => { cancelTransfer(); clearAll(); }} className="p-3 bg-[var(--danger-10)] text-[var(--danger)] hover:bg-[var(--danger)] hover:text-white rounded-full transition-all duration-300 active:scale-90"><X size={20} /></button>
             )}
           </div>
 
+          {/* Routing engine */}
           <div className="bg-[var(--bg-main)] rounded-2xl p-4 mb-8 border border-[var(--border-main)] flex flex-col gap-3">
              <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)]">
                 <span>Routing Engine Evaluation</span>
@@ -234,6 +326,7 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
              )}
           </div>
 
+          {/* PIN display */}
           <div className="bg-[var(--primary-10)] border border-[var(--primary-20)] rounded-2xl p-6 mb-8 w-full animate-in fade-in zoom-in duration-500 flex flex-col sm:flex-row items-center justify-between gap-6 relative group">
             <div className="flex-1 text-center sm:text-left">
               <span className="text-[10px] font-black text-[var(--primary)] uppercase tracking-[0.4em] mb-2 block">Connection PIN</span>
@@ -273,12 +366,9 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
             </div>
           </div>
 
+          {/* Connection & Transfer states */}
           {(status === 'idle' || status === 'connecting' || status === 'connected') && (
             <div className="space-y-8 animate-in fade-in duration-500">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 opacity-50 grayscale pointer-events-none">
-                  <DeviceCard icon={<Laptop size={32} />} name="Global Mesh" owner="Zepglide Node" active />
-                  <DeviceCard icon={<Smartphone size={32} />} name="P2P Bridge" owner="Encrypted" />
-              </div>
               <button 
                 disabled={routingState === 'evaluating' || status === 'connecting'} 
                 onClick={handleStartTransfer} 
@@ -310,7 +400,7 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
                   <Zap size={16} /> Upgrade to Pro
                 </button>
                 <button 
-                  onClick={cancelTransfer}
+                  onClick={() => { cancelTransfer(); clearAll(); }}
                   className="w-full text-[var(--text-muted)] hover:text-[var(--danger)] hover:bg-[var(--danger-10)] px-8 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all duration-300 active:scale-95"
                 >
                   Cancel
@@ -334,7 +424,11 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
                         retryTransfer();
                         const newPin = Math.floor(100000 + Math.random() * 900000).toString();
                         setPin(newPin);
-                        startSession(newPin, password, isMultiPeer);
+                        setRoutingState('evaluating');
+                        setTimeout(() => {
+                          setRoutingState('quic');
+                          startSession(newPin, password, isMultiPeer);
+                        }, 1500);
                         showToast('Re-initializing signal...', 'info');
                     }}
                     className="w-full bg-[var(--danger)] text-white hover:brightness-110 px-8 py-4 mb-4 rounded-xl font-black text-xs uppercase tracking-widest transition-all duration-300 shadow-xl active:scale-95 flex items-center justify-center gap-2"
@@ -342,7 +436,7 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
                     <RefreshCw size={16} /> Retry Connection
                   </button>
                   <button 
-                    onClick={cancelTransfer}
+                    onClick={() => { cancelTransfer(); clearAll(); }}
                     className="w-full text-[var(--text-muted)] hover:text-[var(--danger)] hover:bg-[var(--danger-10)] px-8 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all duration-300 active:scale-95"
                   >
                     Abort Transfer
@@ -372,7 +466,7 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
                     {cancelStep === 1 ? 'Press Again to Confirm Cancel' : 'Cancel Synchronization'}
                   </button>
                   
-                  <div className="flex justify-between items-center mt-2">
+                  <div className="flex justify-between items-center mt-2 w-full">
                      <span className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Direct Mesh Active</span>
                      <span className="text-xs font-black text-[var(--text-muted)] tracking-[0.25em]">{progress}% SYNCED</span>
                   </div>
@@ -387,7 +481,7 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
               <h3 className="text-3xl font-black text-[var(--text-main)] tracking-tight mb-8">Sync Complete</h3>
               
               <div className="flex flex-wrap gap-4 w-full justify-center">
-                 <button onClick={() => { setSelectedFiles([]); setRawFiles([]); }} className="text-[var(--text-main)] bg-[var(--bg-main)] border border-[var(--border-main)] hover:bg-[var(--bg-hover)] px-8 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all duration-300 shadow-sm active:scale-95">Send Another</button>
+                 <button onClick={clearAll} className="text-[var(--text-main)] bg-[var(--bg-main)] border border-[var(--border-main)] hover:bg-[var(--bg-hover)] px-8 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all duration-300 shadow-sm active:scale-95">Send Another</button>
               </div>
             </div>
           )}
@@ -397,14 +491,10 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
   );
 }
 
-function DeviceCard({ icon, name, owner, active }) {
-  return (
-    <div className={`flex-1 border-2 rounded-[2rem] p-6 flex items-center gap-5 cursor-pointer transition-all duration-500 hover:-translate-y-2 active:scale-95 ${active ? 'border-[var(--primary)] bg-[var(--primary-10)] shadow-2xl shadow-[var(--primary-10)]' : 'border-[var(--border-main)] bg-[var(--bg-surface)] hover:border-[var(--primary-30)] hover:shadow-xl'}`}>
-      <div className={`shrink-0 transition-transform duration-500 ${active ? 'text-[var(--primary)] scale-125' : 'text-[var(--text-muted)] opacity-50'}`}>{icon}</div>
-      <div className="text-left overflow-hidden">
-        <h5 className="text-lg font-black text-[var(--text-main)] truncate tracking-tighter">{name}</h5>
-        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--text-muted)] mt-1">{owner}</p>
-      </div>
-    </div>
-  );
+function formatFileSize(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }

@@ -2,25 +2,31 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { io } from 'socket.io-client';
 
 const SIGNAL_URL = import.meta.env.VITE_SIGNAL_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : 'http://localhost:3002');
-const CHUNK_SIZE = 262144; // 256KB per chunk
 
 export function useWebRTC() {
-    const [socket, setSocket] = useState(null);
-    const [peerConnections, setPeerConnections] = useState({});
-    const [dataChannels, setDataChannels] = useState({});
     const [progress, setProgress] = useState(0);
-    const [status, setStatus] = useState('idle'); // idle, connecting, connected, transferring, success, error, firewall_blocked
+    const [status, setStatus] = useState('idle');
     const [receivedFile, setReceivedFile] = useState(null);
-    const [speed, setSpeed] = useState(0); 
+    const [speed, setSpeed] = useState(0);
     const [eta, setEta] = useState(0);
     const [metadata, setMetadata] = useState(null);
     const [errorMsg, setErrorMsg] = useState('');
-    
-    const fileBuffer = useRef([]);
-    const transferredBytes = useRef(0);
-    const totalSize = useRef(0);
-    const lastBytes = useRef(0);
-    const lastTime = useRef(0);
+
+    // Use refs for mutable state that needs to be current inside callbacks
+    const socketRef = useRef(null);
+    const peerConnectionsRef = useRef({});
+    const dataChannelsRef = useRef({});
+    const fileBufferRef = useRef([]);
+    const transferredBytesRef = useRef(0);
+    const totalSizeRef = useRef(0);
+    const lastBytesRef = useRef(0);
+    const lastTimeRef = useRef(0);
+    const metadataRef = useRef(null);
+    const statusRef = useRef('idle');
+    const receivedFileRef = useRef(null);
+
+    // Keep statusRef in sync
+    useEffect(() => { statusRef.current = status; }, [status]);
 
     // Speed & ETA Monitoring
     useEffect(() => {
@@ -29,48 +35,115 @@ export function useWebRTC() {
             setEta(0);
             return;
         }
+        lastBytesRef.current = transferredBytesRef.current;
+        lastTimeRef.current = Date.now();
         const interval = setInterval(() => {
             const now = Date.now();
-            const deltaBytes = transferredBytes.current - lastBytes.current;
-            const deltaSeconds = (now - lastTime.current) / 1000;
+            const deltaBytes = transferredBytesRef.current - lastBytesRef.current;
+            const deltaSeconds = (now - lastTimeRef.current) / 1000;
             if (deltaSeconds > 0) {
                 const currentSpeed = (deltaBytes / (1024 * 1024)) / deltaSeconds;
                 setSpeed(currentSpeed);
-                const remainingBytes = totalSize.current - transferredBytes.current;
+                const remainingBytes = totalSizeRef.current - transferredBytesRef.current;
                 if (currentSpeed > 0) setEta(Math.round(remainingBytes / (currentSpeed * 1024 * 1024)));
             }
-            lastBytes.current = transferredBytes.current;
-            lastTime.current = now;
-        }, 500); // 500ms for ultra-responsive UI
+            lastBytesRef.current = transferredBytesRef.current;
+            lastTimeRef.current = now;
+        }, 500);
         return () => clearInterval(interval);
     }, [status]);
 
-    useEffect(() => {
-        const newSocket = io(SIGNAL_URL);
-        setSocket(newSocket);
-        
-        newSocket.on('room-error', (data) => {
-            setErrorMsg(data.message);
-            setStatus('error');
-        });
+    // --- Incoming data handler (uses refs so it's always current) ---
+    const handleIncomingData = useCallback((data) => {
+        if (typeof data === 'string') {
+            try {
+                const msg = JSON.parse(data);
+                if (msg.type === 'batch_info') {
+                    setStatus('transferring');
+                    setReceivedFile([]);
+                    receivedFileRef.current = [];
+                } else if (msg.type === 'metadata') {
+                    metadataRef.current = msg;
+                    setMetadata(msg);
+                    totalSizeRef.current = msg.size;
+                    fileBufferRef.current = [];
+                    transferredBytesRef.current = 0;
+                    setProgress(0);
+                } else if (msg.type === 'cancel') {
+                    doCancel();
+                }
+            } catch (e) {
+                console.error('[WebRTC] Failed to parse message:', e);
+            }
+            return;
+        }
 
-        return () => newSocket.close();
+        fileBufferRef.current.push(data);
+        transferredBytesRef.current += data.byteLength;
+        const currentMeta = metadataRef.current;
+        if (currentMeta && totalSizeRef.current > 0) {
+            setProgress(Math.round((transferredBytesRef.current / totalSizeRef.current) * 100));
+        }
+
+        if (transferredBytesRef.current >= totalSizeRef.current && currentMeta) {
+            const blob = new Blob(fileBufferRef.current, { type: currentMeta.mime });
+            const fileObj = { blob, name: currentMeta.name, url: URL.createObjectURL(blob), index: currentMeta.index };
+
+            const prevFiles = receivedFileRef.current || [];
+            const updatedFiles = [...prevFiles, fileObj];
+            receivedFileRef.current = updatedFiles;
+            setReceivedFile(updatedFiles);
+
+            if (currentMeta.index === currentMeta.totalCount - 1) {
+                setStatus('success');
+            }
+            // Reset for next file in batch
+            fileBufferRef.current = [];
+            transferredBytesRef.current = 0;
+            metadataRef.current = null;
+        }
     }, []);
 
-    const setupPeerConnection = useCallback((pin, targetId, isInitiator) => {
+    // Stable ref for handleIncomingData so setupDataChannel always uses latest
+    const handleIncomingDataRef = useRef(handleIncomingData);
+    useEffect(() => { handleIncomingDataRef.current = handleIncomingData; }, [handleIncomingData]);
+
+    // --- Data channel setup ---
+    const setupDataChannel = useCallback((dc, targetId) => {
+        dc.binaryType = 'arraybuffer';
+        dc.bufferedAmountLowThreshold = 2 * 1024 * 1024;
+        dc.onopen = () => {
+            setStatus('connected');
+            console.log('[WebRTC] Data Channel Open for', targetId);
+        };
+        dc.onmessage = (event) => handleIncomingDataRef.current(event.data);
+        dc.onclose = () => {
+            console.log('[WebRTC] Data Channel Closed for', targetId);
+        };
+        dataChannelsRef.current = { ...dataChannelsRef.current, [targetId]: dc };
+    }, []);
+
+    // --- Peer connection setup ---
+    const setupPeerConnection = useCallback((socket, pin, targetId, isInitiator) => {
         const pc = new RTCPeerConnection({
-            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
         });
 
         pc.oniceconnectionstatechange = () => {
-            if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-                console.warn('[WebRTC] Connection dropped/failed');
-                // Check if STUN failed (firewall block)
-                if (pc.iceConnectionState === 'failed') {
-                    setStatus('firewall_blocked');
-                } else {
-                    setStatus('error');
-                }
+            const state = pc.iceConnectionState;
+            console.log('[WebRTC] ICE state:', state);
+            if (state === 'failed') {
+                setStatus('firewall_blocked');
+            } else if (state === 'disconnected') {
+                // Give it a moment to recover before declaring error
+                setTimeout(() => {
+                    if (pc.iceConnectionState === 'disconnected') {
+                        setStatus('error');
+                    }
+                }, 3000);
             }
         };
 
@@ -89,56 +162,97 @@ export function useWebRTC() {
             };
         }
 
-        setPeerConnections(prev => ({ ...prev, [targetId]: pc }));
+        peerConnectionsRef.current = { ...peerConnectionsRef.current, [targetId]: pc };
         return pc;
-    }, [socket]);
+    }, [setupDataChannel]);
 
-    const setupDataChannel = (dc, targetId) => {
-        dc.binaryType = 'arraybuffer';
-        dc.bufferedAmountLowThreshold = 2 * 1024 * 1024; // 2MB threshold for blazing fast continuous streaming
-        dc.onopen = () => {
-            setStatus('connected');
-            console.log('P2P Data Channel Open for', targetId);
+    // --- Connect socket on mount ---
+    useEffect(() => {
+        const newSocket = io(SIGNAL_URL, {
+            transports: ['websocket', 'polling'],
+            reconnectionAttempts: 5,
+            timeout: 10000
+        });
+        socketRef.current = newSocket;
+
+        newSocket.on('connect', () => {
+            console.log('[Signal] Connected to signaling server:', newSocket.id);
+        });
+
+        newSocket.on('connect_error', (err) => {
+            console.error('[Signal] Connection error:', err.message);
+        });
+
+        newSocket.on('room-error', (data) => {
+            setErrorMsg(data.message);
+            setStatus('error');
+        });
+
+        return () => {
+            newSocket.removeAllListeners();
+            newSocket.close();
         };
-        dc.onmessage = (event) => handleIncomingData(event.data);
-        dc.onclose = () => {};
-        setDataChannels(prev => ({ ...prev, [targetId]: dc }));
-    };
+    }, []);
 
+    // --- Start session (sender) ---
     const startSession = useCallback((pin, password = '', isMultiPeer = false) => {
-        if (!socket) return;
+        const socket = socketRef.current;
+        if (!socket || !socket.connected) {
+            setErrorMsg('Not connected to signaling server. Please wait...');
+            setStatus('error');
+            return;
+        }
         setStatus('connecting');
         setErrorMsg('');
+
+        // Clean up any previous listeners to prevent stacking
+        socket.off('peer-joined');
+        socket.off('signal');
+
         socket.emit('create-room', { pin, password, isMultiPeer });
 
-        // Note: multiple receivers can join if isMultiPeer is true
         socket.on('peer-joined', async ({ receiverId }) => {
-            const pc = setupPeerConnection(pin, receiverId, true);
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            socket.emit('signal', { pin, targetId: receiverId, signalData: { sdp: pc.localDescription } });
+            try {
+                console.log('[Signal] Peer joined:', receiverId);
+                const pc = setupPeerConnection(socket, pin, receiverId, true);
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                socket.emit('signal', { pin, targetId: receiverId, signalData: { sdp: pc.localDescription } });
+            } catch (err) {
+                console.error('[WebRTC] Error creating offer:', err);
+                setStatus('error');
+                setErrorMsg('Failed to create connection offer.');
+            }
         });
 
-        socket.on('signal', async ({ senderId, signalData: { sdp, candidate } }) => {
-            setPeerConnections(prev => {
-                const pc = prev[senderId];
-                if (!pc) return prev;
-                (async () => {
-                    if (sdp) await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-                    if (candidate) await pc.addIceCandidate(new RTCIceCandidate(candidate));
-                })();
-                return prev;
-            });
+        socket.on('signal', async ({ senderId, signalData }) => {
+            try {
+                const pc = peerConnectionsRef.current[senderId];
+                if (!pc) return;
+                if (signalData.sdp) {
+                    await pc.setRemoteDescription(new RTCSessionDescription(signalData.sdp));
+                }
+                if (signalData.candidate) {
+                    await pc.addIceCandidate(new RTCIceCandidate(signalData.candidate));
+                }
+            } catch (err) {
+                console.error('[WebRTC] Signal handling error:', err);
+            }
         });
-    }, [socket, setupPeerConnection]);
+    }, [setupPeerConnection]);
 
-    const sendFiles = async (filesArray) => {
-        const channels = Object.values(dataChannels).filter(dc => dc.readyState === 'open');
-        if (channels.length === 0) return;
-        
+    // --- Send files ---
+    const sendFiles = useCallback(async (filesArray) => {
+        const channels = Object.values(dataChannelsRef.current).filter(dc => dc.readyState === 'open');
+        if (channels.length === 0) {
+            console.error('[WebRTC] No open data channels to send files');
+            return;
+        }
+
         setStatus('transferring');
+
+        // Send batch info
         const totalBatchSize = filesArray.reduce((acc, f) => acc + f.size, 0);
-        
         const batchInfoStr = JSON.stringify({
             type: 'batch_info', count: filesArray.length, totalSize: totalBatchSize
         });
@@ -146,16 +260,21 @@ export function useWebRTC() {
 
         for (let i = 0; i < filesArray.length; i++) {
             const file = filesArray[i];
-            transferredBytes.current = 0;
-            totalSize.current = file.size;
+            transferredBytesRef.current = 0;
+            totalSizeRef.current = file.size;
+            setProgress(0);
 
+            // Send metadata for this file
             const metadataStr = JSON.stringify({
                 type: 'metadata', index: i, totalCount: filesArray.length,
                 name: file.name, size: file.size, mime: file.type
             });
             channels.forEach(dc => dc.send(metadataStr));
 
-            // ReadableStream Implementation (0 RAM overhead)
+            // Small delay to let receiver process metadata
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            // Stream file using ReadableStream (zero-copy)
             const stream = file.stream();
             const reader = stream.getReader();
 
@@ -165,7 +284,8 @@ export function useWebRTC() {
 
                 for (const dc of channels) {
                     if (dc.readyState !== 'open') continue;
-                    
+
+                    // Backpressure: wait if buffer is full
                     if (dc.bufferedAmount > dc.bufferedAmountLowThreshold) {
                         await new Promise(resolve => {
                             dc.onbufferedamountlow = () => {
@@ -177,87 +297,96 @@ export function useWebRTC() {
                     dc.send(value.buffer || value);
                 }
 
-                transferredBytes.current += value.byteLength;
-                setProgress(Math.round((transferredBytes.current / file.size) * 100));
+                transferredBytesRef.current += value.byteLength;
+                setProgress(Math.round((transferredBytesRef.current / file.size) * 100));
             }
-            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // Delay between files so receiver can finalize
+            if (i < filesArray.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
         }
         setStatus('success');
-    };
+    }, []);
 
+    // --- Join session (receiver) ---
     const joinSession = useCallback((pin, password = '') => {
-        if (!socket) return;
-        setStatus('connecting');
-        setErrorMsg('');
-        
-        socket.emit('join-room', { pin, password });
-
-        socket.on('signal', async ({ senderId, signalData: { sdp, candidate } }) => {
-            let pc;
-            setPeerConnections(prev => {
-                pc = prev[senderId];
-                if (!pc) pc = setupPeerConnection(pin, senderId, false);
-                return { ...prev, [senderId]: pc };
-            });
-
-            if (!pc) pc = setupPeerConnection(pin, senderId, false);
-
-            if (sdp) {
-                await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-                socket.emit('signal', { pin, targetId: senderId, signalData: { sdp: pc.localDescription } });
-            }
-            if (candidate) await pc.addIceCandidate(new RTCIceCandidate(candidate));
-        });
-    }, [socket, setupPeerConnection]);
-
-    const handleIncomingData = (data) => {
-        if (typeof data === 'string') {
-            const msg = JSON.parse(data);
-            if (msg.type === 'batch_info') {
-                setStatus('transferring');
-                setReceivedFile([]);
-            } else if (msg.type === 'metadata') {
-                setMetadata(msg);
-                totalSize.current = msg.size;
-                fileBuffer.current = [];
-                transferredBytes.current = 0;
-            } else if (msg.type === 'cancel') cancelTransfer();
+        const socket = socketRef.current;
+        if (!socket || !socket.connected) {
+            setErrorMsg('Not connected to signaling server. Please wait...');
+            setStatus('error');
             return;
         }
+        setStatus('connecting');
+        setErrorMsg('');
 
-        fileBuffer.current.push(data);
-        transferredBytes.current += data.byteLength;
-        setProgress(Math.round((transferredBytes.current / totalSize.current) * 100));
+        // Clean up any previous listeners
+        socket.off('signal');
 
-        if (transferredBytes.current >= totalSize.current && metadata) {
-            const blob = new Blob(fileBuffer.current, { type: metadata.mime });
-            const fileObj = { blob, name: metadata.name, url: URL.createObjectURL(blob), index: metadata.index };
-            
-            setReceivedFile(prev => Array.isArray(prev) ? [...prev, fileObj] : [fileObj]);
+        socket.emit('join-room', { pin, password });
 
-            if (metadata.index === metadata.totalCount - 1) setStatus('success');
-        }
-    };
+        socket.on('signal', async ({ senderId, signalData }) => {
+            try {
+                let pc = peerConnectionsRef.current[senderId];
+                if (!pc) {
+                    pc = setupPeerConnection(socket, pin, senderId, false);
+                }
 
-    const cancelTransfer = useCallback(() => {
-        Object.values(dataChannels).forEach(dc => dc.close());
-        Object.values(peerConnections).forEach(pc => pc.close());
-        setDataChannels({});
-        setPeerConnections({});
+                if (signalData.sdp) {
+                    await pc.setRemoteDescription(new RTCSessionDescription(signalData.sdp));
+                    if (signalData.sdp.type === 'offer') {
+                        const answer = await pc.createAnswer();
+                        await pc.setLocalDescription(answer);
+                        socket.emit('signal', { pin, targetId: senderId, signalData: { sdp: pc.localDescription } });
+                    }
+                }
+                if (signalData.candidate) {
+                    await pc.addIceCandidate(new RTCIceCandidate(signalData.candidate));
+                }
+            } catch (err) {
+                console.error('[WebRTC] Signal handling error:', err);
+            }
+        });
+    }, [setupPeerConnection]);
+
+    // --- Cancel / cleanup ---
+    const doCancel = useCallback(() => {
+        Object.values(dataChannelsRef.current).forEach(dc => {
+            try { dc.close(); } catch (e) { /* ignore */ }
+        });
+        Object.values(peerConnectionsRef.current).forEach(pc => {
+            try { pc.close(); } catch (e) { /* ignore */ }
+        });
+        dataChannelsRef.current = {};
+        peerConnectionsRef.current = {};
+        metadataRef.current = null;
+        receivedFileRef.current = null;
+        fileBufferRef.current = [];
+        transferredBytesRef.current = 0;
+        totalSizeRef.current = 0;
+
         setStatus('idle');
         setProgress(0);
         setSpeed(0);
         setEta(0);
         setMetadata(null);
         setReceivedFile(null);
-        transferredBytes.current = 0;
-    }, [dataChannels, peerConnections]);
+
+        // Clean up socket listeners
+        const socket = socketRef.current;
+        if (socket) {
+            socket.off('peer-joined');
+            socket.off('signal');
+        }
+    }, []);
+
+    const cancelTransfer = useCallback(() => {
+        doCancel();
+    }, [doCancel]);
 
     const retryTransfer = useCallback(() => {
-        cancelTransfer();
-    }, [cancelTransfer]);
+        doCancel();
+    }, [doCancel]);
 
     return {
         status, progress, speed, eta, metadata, receivedFile, errorMsg,
