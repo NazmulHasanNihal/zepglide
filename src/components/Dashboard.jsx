@@ -15,10 +15,9 @@ import PricingView from './views/PricingView';
 import AdminDashboardView from './views/AdminDashboardView';
 import SettingsView from './views/SettingsView';
 import GlobalMapView from './views/GlobalMapView';
-import NetworkTicker from './NetworkTicker';
 import { useSound } from '../hooks/useSound';
 
-const Dashboard = React.memo(({ isAuthenticated, onLoginClick, onLogout, isDarkMode, setIsDarkMode, activeTheme, setActiveTheme, themes }) => {
+const Dashboard = React.memo(({ isAuthenticated, onLoginClick, onLogout, isDarkMode, setIsDarkMode, activeTheme, setActiveTheme, themes, customTheme, setCustomTheme }) => {
   const [activeTab, setActiveTab] = useState('send');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
@@ -47,20 +46,25 @@ const Dashboard = React.memo(({ isAuthenticated, onLoginClick, onLogout, isDarkM
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
       
-      const res = await fetch('/api/profile', {
+      const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/profile', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
       const data = await res.json();
       if (data.profile) setProfile(data.profile);
-      if (data.preferences) setPreferences(data.preferences);
+      if (data.preferences) {
+          setPreferences(data.preferences);
+          if (data.preferences.customTheme) {
+              setCustomTheme(data.preferences.customTheme);
+          }
+      }
     } catch (e) {
       console.error("Failed to fetch profile from backend", e);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [setCustomTheme]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -102,7 +106,7 @@ const Dashboard = React.memo(({ isAuthenticated, onLoginClick, onLogout, isDarkM
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [playSfx]);
 
   const handleDragEnter = (e) => { e.preventDefault(); setDragCounter(prev => prev + 1); };
   const handleDragLeave = (e) => { e.preventDefault(); setDragCounter(prev => prev - 1); };
@@ -147,8 +151,14 @@ const Dashboard = React.memo(({ isAuthenticated, onLoginClick, onLogout, isDarkM
 
       <header className="h-20 shrink-0 flex items-center justify-between px-4 md:px-8 border-b border-[var(--border-main)] bg-[var(--bg-surface)]/80 backdrop-blur-md z-50 transition-all duration-500 shadow-sm">
         <div onClick={() => handleTabClick('send')} className="flex items-center gap-2 text-[var(--primary)] hover:scale-105 transition-transform duration-300 cursor-pointer shrink-0 mr-6">
-          <Zap size={28} className="fill-current" />
-          <span className="text-xl font-bold tracking-tight text-[var(--text-main)] hidden sm:block">Zepglide</span>
+          {activeTheme === 'custom' && customTheme?.logoUrl ? (
+            <img src={customTheme.logoUrl} alt="Brand Logo" className="h-8 max-w-[150px] object-contain" />
+          ) : (
+            <>
+              <Zap size={28} className="fill-current" />
+              <span className="text-xl font-bold tracking-tight text-[var(--text-main)] hidden sm:block">Zepglide</span>
+            </>
+          )}
         </div>
 
         <nav className="hidden lg:flex flex-1 items-center justify-center gap-2">
@@ -186,7 +196,9 @@ const Dashboard = React.memo(({ isAuthenticated, onLoginClick, onLogout, isDarkM
                   <div className="absolute right-0 mt-3 w-64 bg-[var(--bg-surface)] border border-[var(--border-main)] rounded-2xl shadow-xl z-50 overflow-hidden py-1 animate-in fade-in slide-in-from-top-2 origin-top-right">
                     <div className="px-4 py-4 border-b border-[var(--border-main)] bg-[var(--bg-main)]/30">
                        <p className="text-sm font-bold text-[var(--text-main)] truncate">{profile.name}</p>
-                       <p className="text-xs text-[var(--text-muted)] truncate mt-0.5 font-medium flex items-center gap-1"><Crown size={12} className="text-[var(--warning)]" /> {profile.plan} Member</p>
+                       {profile.plan && profile.plan.toLowerCase() !== 'free' && profile.plan.toLowerCase() !== 'default' && (
+                          <p className="text-xs text-[var(--text-muted)] truncate mt-0.5 font-medium flex items-center gap-1"><Crown size={12} className="text-[var(--warning)]" /> {profile.plan} Member</p>
+                       )}
                     </div>
                     <div className="py-1">
                       <DropdownItem icon={<User size={16} />} label="My Profile" onClick={() => { handleTabClick('profile'); setIsProfileDropdownOpen(false); }} />
@@ -202,7 +214,7 @@ const Dashboard = React.memo(({ isAuthenticated, onLoginClick, onLogout, isDarkM
             <button onClick={onLoginClick} className="hidden sm:flex items-center gap-2 bg-[var(--primary)] text-white px-6 py-2.5 rounded-full font-bold text-sm hover:brightness-110 active:scale-95 transition-all duration-300 shadow-lg"><UserCircle size={18} /><span>Sign In</span></button>
           )}
 
-          <button className="lg:hidden p-2 rounded-xl bg-[var(--bg-main)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-all active:scale-90 ml-1" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>{isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}</button>
+          <button className="lg:hidden p-2 rounded-xl bg-[var(--bg-main)] text-[var(--text-main)] hover:bg-[var(--bg-hover)] transition-all active:scale-90 ml-1" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>{isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}</button>
         </div>
       </header>
 
@@ -234,7 +246,7 @@ const Dashboard = React.memo(({ isAuthenticated, onLoginClick, onLogout, isDarkM
             <GlobalMapView userCountry={profile.countryCode} isDarkMode={isDarkMode} activeTheme={activeTheme} />
           </div>
         ) : (
-          <div className="max-w-[1440px] mx-auto p-4 md:p-8 flex justify-center">
+          <div className="max-w-[1440px] mx-auto p-4 md:p-8 flex justify-center pb-24 md:pb-24">
             <div key={activeTab} className="w-full animate-in fade-in slide-in-from-bottom-8 duration-700 ease-[cubic-bezier(0.23,1,0.32,1)] fill-mode-both">
               {activeTab === 'send' && <SendView profile={profile} isAuthenticated={isAuthenticated} showToast={showToast} globalDroppedFile={globalDroppedFile} setGlobalDroppedFile={setGlobalDroppedFile} />}
               {activeTab === 'receive' && <ReceiveView showToast={showToast} />}
@@ -243,13 +255,11 @@ const Dashboard = React.memo(({ isAuthenticated, onLoginClick, onLogout, isDarkM
               {activeTab === 'profile' && <ProfileView onLogout={() => { onLogout(); setActiveTab('send'); }} profile={profile} isAdmin={isAdmin} onEditClick={() => handleTabClick('settings')} showToast={showToast} />}
               {activeTab === 'pricing' && <PricingView />}
               {activeTab === 'admin' && isAdmin && <AdminDashboardView showToast={showToast}/>}
-              {activeTab === 'settings' && <SettingsView isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode} activeTheme={activeTheme} setActiveTheme={setActiveTheme} themes={themes} profile={profile} setProfile={setProfile} preferences={preferences} setPreferences={setPreferences} showToast={showToast} />}
+              {activeTab === 'settings' && <SettingsView isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode} activeTheme={activeTheme} setActiveTheme={setActiveTheme} themes={themes} profile={profile} setProfile={setProfile} preferences={preferences} setPreferences={setPreferences} showToast={showToast} customTheme={customTheme} setCustomTheme={setCustomTheme} />}
             </div>
           </div>
         )}
       </main>
-      
-      <NetworkTicker />
     </div>
   );
 });

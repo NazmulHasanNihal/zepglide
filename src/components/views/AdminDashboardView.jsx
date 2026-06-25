@@ -42,17 +42,17 @@ export default function AdminDashboardView({ showToast }) {
         const headers = { 'Authorization': `Bearer ${token}` };
 
         // Fetch metrics
-        const metricsRes = await fetch('/api/admin/metrics', { headers });
+        const metricsRes = await fetch((import.meta.env.VITE_API_URL || '') + '/api/admin/metrics', { headers });
         const metricsData = await metricsRes.json();
         if (!metricsData.error) setMetrics(metricsData);
 
         // Fetch users
-        const usersRes = await fetch('/api/admin/users', { headers });
+        const usersRes = await fetch((import.meta.env.VITE_API_URL || '') + '/api/admin/users', { headers });
         const usersData = await usersRes.json();
         if (Array.isArray(usersData)) setUsers(usersData);
 
         // Fetch transfers  
-        const txRes = await fetch('/api/admin/transfers', { headers });
+        const txRes = await fetch((import.meta.env.VITE_API_URL || '') + '/api/admin/transfers', { headers });
         const txData = await txRes.json();
         if (Array.isArray(txData)) setTransfers(txData);
       } catch (err) {

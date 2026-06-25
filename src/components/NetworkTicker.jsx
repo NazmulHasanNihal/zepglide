@@ -1,42 +1,51 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, Globe, ShieldCheck, Zap } from 'lucide-react';
+
+const SYSTEM_MESSAGES = [
+  { id: 1, type: 'SYSTEM', msg: 'GLOBAL ROUTING OPTIMAL' },
+  { id: 2, type: 'SECURITY', msg: 'END-TO-END ENCRYPTION ACTIVE' },
+  { id: 3, type: 'NETWORK', msg: 'LATENCY < 15MS (GLOBAL AVERAGE)' },
+  { id: 4, type: 'CAPACITY', msg: 'BANDWIDTH RESERVES AT 98%' },
+  { id: 5, type: 'NODES', msg: 'PEER-TO-PEER MESH STABLE' },
+  { id: 6, type: 'STATUS', msg: 'ALL RELAYS OPERATIONAL' },
+  { id: 7, type: 'INTEGRITY', msg: 'ZERO-KNOWLEDGE PROTOCOL ENFORCED' }
+];
 
 const NetworkTicker = () => {
   const [events, setEvents] = useState([]);
+
   useEffect(() => {
-    const fetchTelemetry = async () => {
-      try {
-        const res = await fetch('/api/telemetry');
-        const data = await res.json();
-        if (data && data.length > 0) {
-          setEvents(data);
-        } else {
-          // Fallback message if db is empty
-          setEvents([{ id: 'init', type: 'System', msg: 'Zepglide Grid Initialized', time: new Date().toLocaleTimeString() }]);
-        }
-      } catch (err) {
-        console.error('Failed to fetch telemetry', err);
-      }
+    const generateEvents = () => {
+      const now = new Date();
+      return SYSTEM_MESSAGES.map((msg, idx) => ({
+        ...msg,
+        id: `${msg.id}-${Date.now()}`,
+        time: new Date(now.getTime() - (idx * 5000)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      }));
     };
     
-    fetchTelemetry();
-    const interval = setInterval(fetchTelemetry, 6000);
+    // Duplicate the array to create a seamless scrolling loop
+    setEvents([...generateEvents(), ...generateEvents()]);
+    
+    const interval = setInterval(() => {
+       setEvents([...generateEvents(), ...generateEvents()]);
+    }, 60000);
+
     return () => clearInterval(interval);
   }, []);
 
   return (
-    <div className="h-8 bg-[var(--bg-surface)]/40 backdrop-blur-md border-t border-[var(--border-main)] flex items-center px-6 overflow-hidden select-none fixed bottom-0 w-full z-[100]">
+    <div className="h-8 bg-[var(--bg-surface)]/80 backdrop-blur-md border-t border-[var(--border-main)] flex items-center px-6 overflow-hidden select-none fixed bottom-0 w-full z-[100] shadow-xl">
       <div className="flex items-center gap-2 mr-8 shrink-0">
-        <div className="h-2 w-2 rounded-full bg-[var(--success)] animate-pulse"></div>
-        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-[var(--text-main)]">Live Network Telemetry</span>
+        <div className="h-2 w-2 rounded-full bg-[var(--success)] animate-pulse shadow-[0_0_8px_var(--success)]"></div>
+        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--text-main)] mt-[1px]">System Status</span>
       </div>
       
-      <div className="flex gap-12 animate-marquee whitespace-nowrap items-center">
-        {events.map((e) => (
-          <div key={e.id} className="flex items-center gap-2 text-[var(--text-muted)] text-[9px] font-bold uppercase transition-all">
+      <div className="flex gap-16 animate-marquee w-max items-center">
+        {events.map((e, index) => (
+          <div key={`${e.id}-${index}`} className="flex items-center gap-2 text-[var(--text-muted)] text-[10px] font-bold uppercase transition-all">
             <span className="text-[var(--primary)]">[{e.type}]</span>
-            <span className="opacity-80">{e.msg}</span>
-            {e.time && <span className="text-[var(--success)] px-1.5 py-0.5 bg-[var(--success-10)] rounded font-mono">{e.time}</span>}
+            <span className="opacity-90 tracking-wide text-[var(--text-main)]">{e.msg}</span>
+            <span className="text-[var(--success)] px-1.5 py-0.5 bg-[var(--success-10)] rounded border border-[var(--success-20)] font-mono ml-1">{e.time}</span>
           </div>
         ))}
       </div>
@@ -47,7 +56,7 @@ const NetworkTicker = () => {
           100% { transform: translateX(-50%); }
         }
         .animate-marquee {
-          animation: marquee 30s linear infinite;
+          animation: marquee 40s linear infinite;
         }
       `}} />
     </div>

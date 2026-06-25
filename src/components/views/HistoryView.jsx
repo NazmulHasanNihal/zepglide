@@ -12,7 +12,7 @@ export default function HistoryView() {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
 
-        const res = await fetch('/api/history', {
+        const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/history', {
           headers: {
             'Authorization': `Bearer ${token}`
           }

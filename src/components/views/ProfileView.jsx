@@ -85,7 +85,7 @@ export default function ProfileView({ onLogout, profile, isAdmin, onEditClick, s
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.access_token) return;
 
-        const res = await fetch('/api/profile/stats', {
+        const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/profile/stats', {
           headers: { 'Authorization': `Bearer ${session.access_token}` }
         });
         const data = await res.json();

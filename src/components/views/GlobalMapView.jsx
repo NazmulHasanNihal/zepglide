@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { ChevronDown, Shield, Smartphone, Download, Activity, Terminal, Globe, Cpu, RefreshCw, Zap, Database, Route, Lock } from 'lucide-react';
 
 function cn(...inputs) {
   return twMerge(clsx(inputs));
@@ -16,9 +17,8 @@ const COUNTRY_REGISTRY = {
   Oceania: ["Australia", "Fiji", "Kiribati", "Marshall Islands", "Micronesia", "Nauru", "New Zealand", "Palau", "Papua New Guinea", "Samoa", "Solomon Islands", "Tonga", "Tuvalu", "Vanuatu"]
 };
 
-// SVG Normalization Map (Bridges User List to SVG Attributes)
+// SVG Normalization Map
 const NAME_MAPPING = {
-  // User List Name : SVG Name
   "United States of America (USA)": "United States",
   "Russia": "Russian Federation",
   "Congo, Democratic Republic of the": "Democratic Republic of the Congo",
@@ -51,18 +51,87 @@ const NAME_MAPPING = {
   "United Arab Emirates (UAE)": "United Arab Emirates"
 };
 
-const GlobalMapView = ({ isDarkMode, activeTheme, userCountry }) => {
+const LiveTransferCounter = () => {
+  const [totalTransfers, setTotalTransfers] = useState(11470641);
+  useEffect(() => {
+     const int = setInterval(() => {
+        setTotalTransfers(prev => prev + Math.floor(Math.random() * 15) + 1);
+     }, 2000);
+     return () => clearInterval(int);
+  }, []);
+  return <div className="text-[var(--primary)] text-xl md:text-2xl font-black tracking-widest mt-2">{totalTransfers.toLocaleString()} TRANSFERS ON THIS DAY</div>;
+};
+
+const GlobalMapView = () => {
   const [worldData, setWorldData] = useState([]);
-  const [countryUsers, setCountryUsers] = useState({}); // { [name]: count }
-  const [hoverInfo, setHoverInfo] = useState({ name: '', x: 0, y: 0, visible: false, stats: {} });
+  const [countryUsers, setCountryUsers] = useState({});
   const [countryAnchors, setCountryAnchors] = useState([]);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
-  const svgRef = useRef(null);
-  const pinchRef = useRef({ distance: 0, baseScale: 1 });
+  const [arcs, setArcs] = useState([]);
+  const [activeLabels, setActiveLabels] = useState([]);
+  const [hoverInfo, setHoverInfo] = useState({ name: '', visible: false, x: 0, y: 0, users: 0 });
+  
+  const [isCollapsed, setIsCollapsed] = useState(true);
+  
+  const [recentFiles, setRecentFiles] = useState([
+    { id: 1, fromCode: 'DE', toCode: 'US', fileName: 'kernel_v4.dmg', fileSize: '1.4 GB', type: 'media' },
+    { id: 2, fromCode: 'IN', toCode: 'IN', fileName: 'dataset_mesh.zip', fileSize: '8.2 GB', type: 'archive' },
+    { id: 3, fromCode: 'GB', toCode: 'JP', fileName: 'screencast.mov', fileSize: '310 MB', type: 'media' },
+    { id: 4, fromCode: 'BR', toCode: 'BR', fileName: 'backup_db.tar.gz', fileSize: '540 MB', type: 'archive' },
+    { id: 5, fromCode: 'FR', toCode: 'CA', fileName: 'design_specs.pdf', fileSize: '24 MB', type: 'document' }
+  ]);
 
-  // Phase 1: Load and Parse SVG
+  const [globalStats, setGlobalStats] = useState({ activePeers: 142054, bandwidth: 5.4, filesInFlight: 842, dataSynced: 142.5, distanceBridged: 894520 });
+  
+  const svgRef = useRef(null);
+  const [clickEffects, setClickEffects] = useState([]);
+
+  const handleMapClick = (e) => {
+    if (!svgRef.current) return;
+    const pt = svgRef.current.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const svgP = pt.matrixTransform(svgRef.current.getScreenCTM().inverse());
+    
+    const id = Date.now();
+    setClickEffects(prev => [...prev, { id, x: svgP.x, y: svgP.y }]);
+    
+    setTimeout(() => {
+       setClickEffects(prev => prev.filter(c => c.id !== id));
+    }, 1000);
+  };
+
+  const fileNames = ['render_final.mp4', 'weights_gpt2.bin', 'source_code.zip', 'index.html', 'assets.tar', 'presentation.pptx', 'audio_track.wav', 'docker-compose.yml'];
+  const fileSizes = ['124 MB', '4.2 GB', '84 MB', '24 KB', '812 MB', '15 MB', '42 MB', '8 KB'];
+  const countries = ['US', 'DE', 'GB', 'JP', 'BR', 'IN', 'FR', 'CA', 'AU', 'ZA'];
+
+  // Stats and recent files simulation interval
+  useEffect(() => {
+    const int = setInterval(() => {
+      setRecentFiles(prev => {
+        const next = [...prev];
+        const from = countries[Math.floor(Math.random() * countries.length)];
+        const to = countries[Math.floor(Math.random() * countries.length)];
+        const file = fileNames[Math.floor(Math.random() * fileNames.length)];
+        const size = fileSizes[Math.floor(Math.random() * fileSizes.length)];
+        const type = file.endsWith('mp4') || file.endsWith('mov') || file.endsWith('wav') ? 'media' : file.endsWith('zip') || file.endsWith('tar') || file.endsWith('gz') ? 'archive' : 'document';
+        
+        next.unshift({ id: Date.now(), fromCode: from, toCode: to, fileName: file, fileSize: size, type });
+        if (next.length > 8) next.pop();
+        return next;
+      });
+
+      setGlobalStats(prev => ({
+        activePeers: prev.activePeers + Math.floor(Math.random() * 50) - 20,
+        bandwidth: Math.max(1.0, prev.bandwidth + (Math.random() * 0.4 - 0.2)),
+        filesInFlight: prev.filesInFlight + Math.floor(Math.random() * 10) - 4,
+        dataSynced: prev.dataSynced + (Math.random() * 0.15),
+        distanceBridged: prev.distanceBridged + Math.floor(Math.random() * 4500)
+      }));
+    }, 2500);
+    return () => clearInterval(int);
+  }, []);
+
   useEffect(() => {
     fetch('/world.svg')
       .then(res => res.text())
@@ -75,7 +144,6 @@ const GlobalMapView = ({ isDarkMode, activeTheme, userCountry }) => {
         paths.forEach((path, index) => {
           const d = path.getAttribute('d');
           const id = path.getAttribute('id');
-          // Use normalization logic for accurate lookup
           let rawName = (path.getAttribute('name') || path.getAttribute('class') || '').trim();
           
           if (d) {
@@ -87,15 +155,12 @@ const GlobalMapView = ({ isDarkMode, activeTheme, userCountry }) => {
             });
           }
         });
-
         setWorldData(data);
       });
   }, []);
 
-  // Phase 2: Centroid Anchor Calculation (Memoized result)
   useEffect(() => {
     if (worldData.length === 0 || !svgRef.current) return;
-
     const svg = svgRef.current;
     const groupedPaths = {};
 
@@ -108,7 +173,7 @@ const GlobalMapView = ({ isDarkMode, activeTheme, userCountry }) => {
       try {
         const bbox = path.getBBox();
         const area = bbox.width * bbox.height;
-        if (area < 15) return; // Lower threshold to include smaller countries (e.g. Singapore)
+        if (area < 15) return;
 
         if (!groupedPaths[name]) groupedPaths[name] = [];
         groupedPaths[name].push({
@@ -132,13 +197,12 @@ const GlobalMapView = ({ isDarkMode, activeTheme, userCountry }) => {
     setIsLoaded(true);
   }, [worldData]);
 
-  // Phase 3: Network Data Fetch (Active User Data)
   useEffect(() => {
     if (!isLoaded || countryAnchors.length === 0) return;
     
     const fetchMapData = async () => {
       try {
-        const res = await fetch('/api/map');
+        const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/map');
         const data = await res.json();
         setCountryUsers(data);
       } catch (err) {
@@ -147,345 +211,333 @@ const GlobalMapView = ({ isDarkMode, activeTheme, userCountry }) => {
     };
     
     fetchMapData();
-    const interval = setInterval(fetchMapData, 10000); // Check every 10s for new nodes
+    const interval = setInterval(fetchMapData, 10000);
     return () => clearInterval(interval);
   }, [isLoaded, countryAnchors]);
 
-  // Performance: Memoize the entire map layer
-  const mapLayer = useMemo(() => {
-    return worldData.map((p) => {
-      const isActive = countryUsers[p.name] > 0;
-      return (
-        <path
-          key={`geo-path-${p.index}`}
-          d={p.d}
-          data-index={p.index}
-          data-name={p.name}
-          className={cn(
-            "transition-all duration-300 ease-out fill-land stroke-land outline-none pointer-events-auto",
-            isActive && "fill-land-active stroke-accent stroke-[0.8px] active-pulse-land"
-          )}
-        />
-      );
-    });
-  }, [worldData, countryUsers]);
-
-  // Phase 4: Handle Responsiveness & Zoom logic
+  // Generate Animated Arcs
   useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 768);
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+     if (!isLoaded || countryAnchors.length < 2 || Object.keys(countryUsers).length === 0) return;
+     
+     // Build a list of active nodes based on countryUsers mapped properly (case-insensitive)
+     const activeNodes = countryAnchors.filter(a => {
+        const normalizedAnchor = a.name.trim().toLowerCase();
+        let canonicalName = a.name;
+        for (const [key, val] of Object.entries(NAME_MAPPING)) {
+           if (val.trim().toLowerCase() === normalizedAnchor) {
+              canonicalName = key;
+              break;
+           }
+        }
+        return countryUsers[canonicalName] || countryUsers[a.name];
+     });
+
+     if (activeNodes.length < 2) return;
+     
+     const generateArcs = () => {
+       const newArcs = [];
+       const labels = [];
+       const numArcs = Math.min(15, activeNodes.length * 2);
+       
+       for(let i=0; i<numArcs; i++) {
+          const from = activeNodes[Math.floor(Math.random() * activeNodes.length)];
+          // Remove the while loop so it can randomly pick the same country
+          let to = activeNodes[Math.floor(Math.random() * activeNodes.length)];
+          
+          let cx, cy;
+          if (from === to) {
+            // Draw a looping arc for same-country
+            cx = from.x + 30 + (Math.random() * 20);
+            cy = from.y - 40 - (Math.random() * 20);
+          } else {
+            cx = (from.x + to.x) / 2;
+            const dist = Math.abs(from.x - to.x);
+            cy = Math.min(from.y, to.y) - (dist * 0.3) - (Math.random() * 50);
+          }
+
+          newArcs.push({ 
+            id: `arc-${i}-${Date.now()}`, 
+            from, 
+            to, 
+            cx, 
+            cy, 
+            delay: Math.random() * 2, 
+            duration: 1.5 + Math.random() * 1.5,
+            color: Math.random() > 0.5 ? 'var(--primary)' : '#4ade80' // Add some color variety for fun
+          });
+          
+          // Randomly show labels for some active nodes
+          if (Math.random() > 0.7 && !labels.find(l => l.name === to.name)) {
+              labels.push({ name: to.name, x: to.x, y: to.y });
+          }
+          if (Math.random() > 0.7 && !labels.find(l => l.name === from.name)) {
+              labels.push({ name: from.name, x: from.x, y: from.y });
+          }
+       }
+       setArcs(newArcs);
+       setActiveLabels(labels.slice(0, 5));
+     };
+
+     generateArcs();
+     const interval = setInterval(generateArcs, 8000);
+     return () => clearInterval(interval);
+  }, [isLoaded, countryUsers, countryAnchors]);
+
+  const timelineBars = useMemo(() => {
+    return Array.from({length: 30}).map((_, i) => {
+       const height = 40 + Math.sin(i / 3) * 20 + (Math.random() * 10 - 5);
+       return (
+          <div key={i} className="flex-1 bg-[var(--primary)] transition-all duration-1000 border-r border-black/20" 
+               style={{ height: `${height}%`, opacity: 0.15 }} />
+       );
+    });
   }, []);
 
-  const handleTouchStart = (e) => {
-    if (!isMobile) return;
-    if (e.touches.length === 2) {
-      const dist = Math.hypot(
-        e.touches[0].pageX - e.touches[1].pageX,
-        e.touches[0].pageY - e.touches[1].pageY
-      );
-      pinchRef.current = { distance: dist, baseScale: transform.scale };
-    }
-  };
-
-  const handleTouchMove = (e) => {
-    if (!isMobile) return;
-    if (e.touches.length === 2 && pinchRef.current.distance > 0) {
-      const dist = Math.hypot(
-        e.touches[0].pageX - e.touches[1].pageX,
-        e.touches[0].pageY - e.touches[1].pageY
-      );
-      const ratio = dist / pinchRef.current.distance;
-      const newScale = Math.min(Math.max(pinchRef.current.baseScale * ratio, 1), 4);
-      setTransform(prev => ({ ...prev, scale: newScale }));
-    }
-  };
-
-  const handleTouchEnd = () => {
-    pinchRef.current.distance = 0;
-  };
-
   const handleMouseMove = (e) => {
-    // Robust targeting: Find the closest path element that has a data-name
     const target = e.target.closest('path[data-name]');
     if (target) {
       const rawName = target.getAttribute('data-name');
       let canonicalName = rawName;
+      const normalizedRaw = rawName.trim().toLowerCase();
       for (const [userListNames, svgNames] of Object.entries(NAME_MAPPING)) {
-        if (svgNames === rawName) {
+        if (svgNames.trim().toLowerCase() === normalizedRaw) {
           canonicalName = userListNames;
           break;
         }
       }
-
-      const users = countryUsers[rawName] || 0;
+      const users = countryUsers[canonicalName] || countryUsers[rawName] || 0;
       setHoverInfo({ 
         name: canonicalName, 
+        visible: true, 
         x: e.clientX, 
         y: e.clientY, 
-        visible: true,
-        stats: {
-          latency: users > 0 ? Math.floor(Math.random() * 12 + 2) : '--',
-          nodes: users
-        }
+        users 
       });
     } else {
       setHoverInfo(prev => ({ ...prev, visible: false }));
     }
   };
 
-  const totalUsers = Object.values(countryUsers).reduce((a, b) => a + b, 0);
-
-  // Continental Stats Calculation
-  const continentalStats = useMemo(() => {
-    const stats = {};
-    Object.entries(COUNTRY_REGISTRY).forEach(([continent, countries]) => {
-      let count = 0;
-      countries.forEach(c => {
-        const svgName = NAME_MAPPING[c] || c;
-        count += countryUsers[svgName] || 0;
-      });
-      stats[continent] = count;
-    });
-    return stats;
-  }, [countryUsers]);
-
   return (
     <div 
-      className={cn(
-        "relative w-full h-[calc(100vh-80px)] overflow-hidden flex items-center justify-center p-0 transition-colors duration-700 font-mono touch-none",
-        isDarkMode ? "bg-[var(--bg-main)] text-[var(--primary)]" : "bg-[var(--bg-main)] text-slate-800"
-      )}
-      style={{
-        '--land-fill': isDarkMode ? 'var(--bg-surface)' : '#F1F5F9',
-        '--land-stroke': isDarkMode ? 'var(--primary-20)' : '#CBD5E1',
-        '--land-active': 'var(--primary)',
-        '--accent': 'var(--primary)',
-        '--map-land': 'var(--land-fill)',
-        '--map-land-hover': isDarkMode ? 'var(--primary-20)' : '#E2E8F0'
-      }}
-      onMouseMove={handleMouseMove}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
+       className="relative w-full h-[calc(100vh-80px)] overflow-hidden flex flex-col bg-[var(--bg-main)] text-[var(--text-main)] font-sans touch-none select-none animate-in fade-in"
+       onMouseMove={handleMouseMove}
+       onClick={handleMapClick}
     >
-      {/* Background Ambience */}
-      <div className="absolute inset-0 pointer-events-none opacity-30">
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-[radial-gradient(circle_at_center,rgba(0,186,255,0.05)_0%,transparent_70%)]" />
-        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-[radial-gradient(circle_at_center,rgba(0,186,255,0.05)_0%,transparent_70%)]" />
-      </div>
+        
+       {/* Background Grid Ambience */}
+       <div className="absolute inset-0 pointer-events-none opacity-20" 
+            style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
 
-      {/* World Map Container */}
-      <div className="relative w-full h-full flex items-center justify-center overflow-hidden transition-opacity duration-1000">
-        <svg 
-          ref={svgRef}
-          viewBox="0 0 2000 857" 
-          className="w-[95%] h-[85%] object-contain pointer-events-auto drop-shadow-[0_0_30px_rgba(0,0,0,0.3)]"
-          preserveAspectRatio="xMidYMid meet"
-        >
-          <g 
-            style={{ 
-              transform: `scale(${transform.scale})`,
-              transformOrigin: 'center center',
-              transition: 'transform 0.1s linear'
-            }}
-          >
-            {mapLayer}
-            
-            {/* Active User Nodes Layer */}
-            <g className="badges-layer pointer-events-none">
-              {countryAnchors
-                .filter(a => countryUsers[a.name] > 0)
-                .map((node) => (
-                  <g 
-                    key={`badge-${node.name}`}
-                    transform={`translate(${node.x}, ${node.y})`}
-                  >
-                    <circle r="4" fill="var(--accent)" className="animate-pulse" />
-                    <circle r="14" fill="none" stroke="var(--accent)" strokeWidth="0.5" className="opacity-10 animate-[ping_4s_infinite]" />
-                    
-                    {/* The Numeric Badge */}
-                    <g transform="translate(0, -18)">
-                      <rect 
-                        x="-20" y="-10" width="40" height="20" rx="4" 
-                        className="fill-[var(--bg-surface)] stroke-[var(--primary)] stroke-[2px] shadow-[0_0_20px_var(--primary-20)]" 
-                      />
-                      <text 
-                        fontSize="12" 
-                        textAnchor="middle" 
-                        className="fill-[var(--text-main)] font-[900]" 
-                        y="5"
-                      >
-                        {countryUsers[node.name]}
-                      </text>
+       {/* Top Header Section */}
+       <div className="absolute top-0 w-full z-45 pointer-events-none flex flex-col items-center pt-8 px-4">
+           <h1 className="text-xl md:text-3xl font-black uppercase tracking-widest text-[var(--text-main)] text-center drop-shadow-md">Live Zepglide Transfer Map</h1>
+           <LiveTransferCounter />
+           
+           {/* Top right button - hidden on small screens for responsiveness */}
+           <div className="absolute top-6 right-6 border border-[var(--border-main)] bg-[var(--bg-surface)]/80 px-5 py-2 flex flex-col pointer-events-auto cursor-pointer hover:bg-[var(--bg-hover)] transition hidden lg:flex">
+              <span className="text-[9px] uppercase tracking-wider text-[var(--text-muted)] font-bold mb-0.5">High Velocity P2P Routing</span>
+              <span className="text-sm uppercase font-black text-[var(--text-main)] flex items-center gap-1">Zero Cloud Storage Costs <span className="bg-[var(--primary)] text-[var(--primary-content)] px-1.5 leading-none py-0.5 ml-1 flex items-center justify-center">&gt;</span></span>
+           </div>
+       </div>
+
+       {/* Map Layer */}
+       <div className="flex-1 w-full h-full relative flex items-center justify-center">
+           <svg 
+              ref={svgRef}
+              viewBox="0 0 2000 857" 
+              className="w-[95%] h-[95%] object-contain mt-[-80px] md:mt-0 pointer-events-none drop-shadow-[0_0_10px_rgba(255,255,255,0.05)]"
+              preserveAspectRatio="xMidYMid meet"
+           >
+              <defs>
+                 <pattern id="dot-pattern" x="0" y="0" width="8" height="8" patternUnits="userSpaceOnUse">
+                    <circle cx="2" cy="2" r="1.5" fill="var(--text-muted)" opacity="0.3" />
+                 </pattern>
+                 <linearGradient id="arc-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="var(--primary)" stopOpacity="0" />
+                    <stop offset="50%" stopColor="var(--primary)" stopOpacity="1" />
+                    <stop offset="100%" stopColor="var(--primary)" stopOpacity="0" />
+                 </linearGradient>
+              </defs>
+              
+              {/* Landmass */}
+              <g className="map-landmass">
+                {worldData.map((p) => (
+                   <path
+                     key={`geo-path-${p.index}`}
+                     d={p.d}
+                     data-index={p.index}
+                     data-name={p.name}
+                     className="stroke-[var(--border-main)] stroke-[0.5px] transition-colors duration-500 hover:fill-[var(--primary)] hover:opacity-100 cursor-pointer pointer-events-auto"
+                     fill="url(#dot-pattern)" 
+                     style={{ opacity: 1 }}
+                   />
+                ))}
+              </g>
+
+              {/* Labels */}
+              <g className="labels-layer">
+                 {activeLabels.map((l, i) => (
+                    <g key={`label-${i}`} transform={`translate(${l.x}, ${l.y - 10})`}>
+                       <text fontSize="14" fill="var(--text-main)" textAnchor="middle" className="font-bold drop-shadow-md">{l.name}</text>
                     </g>
-                  </g>
-              ))}
-            </g>
-          </g>
-        </svg>
-      </div>
+                 ))}
+              </g>
 
-      {/* Futuristic HUD Components */}
-      {/* Top HUD Container: Stacks on mobile, flows horizontally on desktop */}
-      <div className={cn(
-        "absolute top-4 md:top-8 left-0 w-full px-4 md:px-8 pointer-events-none flex flex-col md:flex-row justify-between gap-4 md:gap-0 z-[60]"
-      )}>
-        {/* HUD 1: System Telemetry */}
-        <div className={cn(
-          "p-4 border-l-2 border-[var(--accent)] bg-opacity-20 backdrop-blur-md flex flex-col gap-0.5 pointer-events-auto",
-          isDarkMode ? "bg-slate-900/40" : "bg-white/40"
-        )}>
-          <span className="text-[10px] uppercase tracking-[0.4em] opacity-40">Zepglide.Network.Mesh</span>
-          <div className="flex items-center gap-4">
-            <span className="text-xl md:text-2xl font-bold tracking-tighter tabular-nums text-[var(--accent)]">ACTIVE_SYNC</span>
-            <div className="flex flex-col">
-              <span className="text-[8px] opacity-60 uppercase">Protocols</span>
-              <span className="text-[10px] font-bold text-green-500">196 CO_ACC</span>
+              {/* Arcs and Nodes */}
+              <g className="arcs-layer">
+                 {clickEffects.map(effect => (
+                    <circle 
+                      key={effect.id} 
+                      cx={effect.x} 
+                      cy={effect.y} 
+                      r="16" 
+                      fill="transparent" 
+                      stroke="var(--primary)" 
+                      strokeWidth="3" 
+                      className="animate-ping" 
+                      style={{ animationDuration: '1s' }} 
+                    />
+                 ))}
+                 {arcs.map(arc => (
+                    <g key={arc.id}>
+                        <path 
+                          d={`M ${arc.from.x} ${arc.from.y} Q ${arc.cx} ${arc.cy} ${arc.to.x} ${arc.to.y}`}
+                          fill="none"
+                          stroke={arc.color}
+                          strokeWidth="3.5"
+                          className="animate-arc"
+                          style={{ 
+                             animationDelay: `${arc.delay}s`, 
+                             animationDuration: `${arc.duration}s`,
+                             strokeDasharray: '600', 
+                             strokeDashoffset: '600',
+                             filter: `drop-shadow(0 0 12px ${arc.color})`
+                          }}
+                       />
+                       {/* Target nodes only, ping circle removed per user request */}
+                       <circle cx={arc.from.x} cy={arc.from.y} r="4" fill={arc.color} style={{ filter: `drop-shadow(0 0 10px ${arc.color})` }} />
+                       <circle cx={arc.to.x} cy={arc.to.y} r="4" fill={arc.color} style={{ filter: `drop-shadow(0 0 10px ${arc.color})` }} />
+                    </g>
+                 ))}
+              </g>
+           </svg>
+       </div>
+
+       {/* Bottom Dashboard Panel */}
+       <div 
+         className={cn(
+           "absolute bottom-0 left-0 w-full bg-[var(--bg-surface)]/90 border-t border-[var(--border-main)] backdrop-blur-md z-50 transition-all duration-500 ease-in-out flex flex-col shadow-[0_-20px_50px_rgba(0,0,0,0.1)] overflow-hidden",
+           isCollapsed ? "max-h-[60px]" : "max-h-[600px]"
+         )}
+       >
+          {/* Clickable Header Area to Toggle Collapse */}
+          <div 
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="w-full h-[60px] flex items-center justify-between px-6 md:px-12 cursor-pointer hover:bg-[var(--bg-hover)] transition-colors border-b border-[var(--border-main)] shrink-0 group relative z-50"
+          >
+             {/* Toggle Button Graphic */}
+             <div className="absolute left-1/2 -top-4 -translate-x-1/2 w-10 h-8 rounded-t-full border border-[var(--border-main)] bg-[var(--bg-surface)] flex items-center justify-center group-hover:border-[var(--primary)] group-hover:bg-[var(--primary-10)] transition-all">
+                <ChevronDown size={18} className={cn("text-[var(--text-muted)] group-hover:text-[var(--primary)] transition-transform duration-500", isCollapsed ? "rotate-180" : "")} />
+             </div>
+
+             <div className="flex items-center gap-3">
+                <div className="w-3 h-3 rounded-full bg-[var(--primary)] animate-pulse shadow-[0_0_8px_var(--primary)]" />
+                <span className="text-xs md:text-sm font-black uppercase tracking-widest text-[var(--text-main)] group-hover:text-[var(--primary)] transition-colors">
+                  Global Zepglide Network
+                </span>
+             </div>
+             
+             {isCollapsed && (
+               <div className="flex items-center gap-6 opacity-0 animate-in fade-in fill-mode-forwards duration-500">
+                  <span className="text-xs font-bold text-[var(--text-muted)] hidden sm:inline">Active Nodes: <span className="text-[var(--primary)]">{globalStats.activePeers.toLocaleString()}</span></span>
+                  <span className="text-xs font-bold text-[var(--text-muted)]">Speed: <span className="text-[var(--primary)]">{globalStats.bandwidth.toFixed(2)} TB/s</span></span>
+               </div>
+             )}
+          </div>
+
+          {/* Expanded View Content */}
+          {!isCollapsed && (
+            <div className="flex flex-col p-6 relative min-h-0 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-8">
+               
+               {/* Timeline Background Overlay */}
+               <div className="absolute inset-x-0 bottom-0 h-full pointer-events-none flex items-end opacity-[0.03] z-0">
+                  {timelineBars}
+               </div>
+
+               {/* Stats Section */}
+               <div className="flex flex-col z-10 space-y-4">
+                  <div className="flex items-center justify-between mb-2">
+                     <h3 className="text-[10px] md:text-xs font-black uppercase tracking-widest text-[var(--text-muted)]">Live Network Analytics</h3>
+                     <span className="text-[9px] font-black uppercase bg-[var(--primary-10)] px-2 py-0.5 rounded text-[var(--primary)] flex items-center gap-1"><Lock size={10}/> E2E Secured</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 w-full">
+                     <div className="bg-[var(--bg-main)] p-3 md:p-4 rounded-xl border border-[var(--border-main)] hover:border-[var(--primary-30)] hover:bg-[var(--primary-10)] transition-all group flex flex-col justify-center">
+                        <div className="text-[9px] md:text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-1 flex items-center gap-2"><Globe size={12}/> Global Peers</div>
+                        <div className="text-xl md:text-3xl font-black text-[var(--text-main)] group-hover:text-[var(--primary)] transition-colors">{globalStats.activePeers.toLocaleString()}</div>
+                     </div>
+
+                     <div className="bg-[var(--bg-main)] p-3 md:p-4 rounded-xl border border-[var(--border-main)] hover:border-[var(--primary-30)] hover:bg-[var(--primary-10)] transition-all group flex flex-col justify-center">
+                        <div className="text-[9px] md:text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-1 flex items-center gap-2"><Zap size={12}/> Throughput</div>
+                        <div className="text-xl md:text-3xl font-black text-[var(--text-main)] group-hover:text-[var(--primary)] transition-colors">{globalStats.bandwidth.toFixed(2)} <span className="text-xs md:text-sm text-[var(--text-muted)]">TB/s</span></div>
+                     </div>
+
+                     <div className="bg-[var(--bg-main)] p-3 md:p-4 rounded-xl border border-[var(--border-main)] hover:border-[#4ade80]/30 hover:bg-[#4ade80]/10 transition-all group flex flex-col justify-center">
+                        <div className="text-[9px] md:text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-1 flex items-center gap-2"><Database size={12}/> Data Synced</div>
+                        <div className="text-xl md:text-3xl font-black text-[var(--text-main)] group-hover:text-[#4ade80] transition-colors">{globalStats.dataSynced.toFixed(1)} <span className="text-xs md:text-sm text-[var(--text-muted)]">PB</span></div>
+                     </div>
+
+                     <div className="bg-[var(--bg-main)] p-3 md:p-4 rounded-xl border border-[var(--border-main)] hover:border-[#a78bfa]/30 hover:bg-[#a78bfa]/10 transition-all group flex flex-col justify-center">
+                        <div className="text-[9px] md:text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-1 flex items-center gap-2"><Route size={12}/> Bridge Distance</div>
+                        <div className="text-xl md:text-3xl font-black text-[var(--text-main)] group-hover:text-[#a78bfa] transition-colors">{(globalStats.distanceBridged / 1000).toFixed(0)}k <span className="text-xs md:text-sm text-[var(--text-muted)]">km</span></div>
+                     </div>
+                  </div>
+                  
+                  <div className="bg-gradient-to-r from-[var(--primary-20)] to-transparent p-3 md:p-4 rounded-xl border border-[var(--primary-30)] flex flex-row items-center justify-between w-full mt-2">
+                     <div className="flex items-center gap-3">
+                        <Activity className="text-[var(--primary)] animate-pulse hidden sm:block" size={24} />
+                        <div>
+                           <div className="text-[9px] md:text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Files Currently In Transit</div>
+                           <div className="text-lg md:text-xl font-black text-[var(--text-main)]">{globalStats.filesInFlight.toLocaleString()}</div>
+                        </div>
+                     </div>
+                     <div className="px-3 py-1.5 bg-[var(--primary)] text-[var(--primary-content)] text-[9px] md:text-[10px] font-black uppercase rounded-full shadow-[0_0_10px_var(--primary)] flex items-center gap-1"><Activity size={10}/> Real-Time Sync</div>
+                  </div>
+               </div>
             </div>
-          </div>
-          {/* Infographic: Mini Graph */}
-          <div className="flex items-end gap-0.5 h-6 mt-2 opacity-60">
-            {[4, 7, 2, 8, 5, 9, 3, 6, 4, 2].map((h, i) => (
-              <div key={i} className="w-1 bg-[var(--accent)] animate-pulse" style={{ height: `${h * 10}%`, animationDelay: `${i * 100}ms` }} />
-            ))}
-          </div>
-        </div>
+          )}
+       </div>
 
-        {/* HUD 2: Live Nodes Counter */}
-        <div className={cn(
-          "p-4 border-r-2 border-[var(--accent)] text-left md:text-right bg-opacity-20 backdrop-blur-md flex flex-col gap-0.5 pointer-events-auto",
-          isDarkMode ? "bg-slate-900/40" : "bg-white/40"
-        )}>
-          <span className="text-[10px] uppercase tracking-[0.4em] opacity-40">Live.Global.Users</span>
-          <div className="flex items-baseline justify-start md:justify-end gap-2">
-            <span className="text-3xl md:text-4xl font-bold tracking-tighter tabular-nums text-[var(--accent)]">
-              {isLoaded ? totalUsers.toLocaleString() : '----'}
-            </span>
-            <span className="text-[10px] opacity-60">USERS</span>
-          </div>
-          <div className="flex items-center justify-start md:justify-end gap-1 mt-1">
-            <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-[8px] uppercase tracking-widest opacity-80">Encryption Verified</span>
-          </div>
-        </div>
-      </div>
+       {/* Top Border Accent */}
+       <div className="absolute top-0 left-0 w-full h-1 bg-[var(--primary)] shadow-[0_0_10px_var(--primary)] z-45" />
 
-      {/* HUD 3: Live Access Ticker (Bottom Bar) */}
-      <div className={cn(
-        "absolute bottom-0 w-full h-8 overflow-hidden backdrop-blur-xl border-t border-[var(--accent)]/10 flex items-center px-8 z-[50]",
-        isDarkMode ? "bg-slate-950/80" : "bg-white/80"
-      )}>
-        <div className="flex items-center gap-12 whitespace-nowrap animate-[marquee_45s_linear_infinite]">
-          {Object.entries(countryUsers).map(([name, count], i) => {
-             let canonicalName = name;
-             for (const [userListNames, svgNames] of Object.entries(NAME_MAPPING)) {
-               if (svgNames === name) {
-                 canonicalName = userListNames;
-                 break;
-               }
-             }
-             return (
-              <div key={i} className="flex items-center gap-2">
-                <span className="text-[8px] opacity-40">[{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}]</span>
-                <span className="text-[10px] font-bold uppercase tracking-widest">{canonicalName}</span>
-                <span className="text-[10px] text-accent font-bold">+{count} Peers</span>
-                <span className="text-[8px] text-green-500 opacity-60">Uplink_OK</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+       {/* Interactive Tooltip */}
+       <div 
+         className={cn(
+           "fixed pointer-events-none z-[1000] p-3 transition-opacity duration-100 bg-[var(--bg-surface)]/90 backdrop-blur-md border border-[var(--primary)] shadow-[0_0_15px_var(--primary-50)] rounded-md",
+           hoverInfo.visible ? "opacity-100" : "opacity-0"
+         )}
+         style={{ left: hoverInfo.x + 20, top: hoverInfo.y - 40 }}
+       >
+         <div className="text-[10px] font-black uppercase tracking-widest text-[var(--primary)] mb-1">Region Status</div>
+         <div className="text-sm font-bold text-[var(--text-main)]">{hoverInfo.name}</div>
+         <div className="text-xs text-[var(--text-muted)] mt-1">Active Transfers: <span className="text-[var(--primary)] font-bold">{hoverInfo.users}</span></div>
+       </div>
 
-      {/* NEW HUD HUD 4: PERSISTENT CONTINENTAL BAR (Visible on Mobile & Desktop) */}
-      <div className={cn(
-        "absolute bottom-10 left-0 w-full overflow-hidden backdrop-blur-md border-t border-b border-[var(--accent)]/10 py-2 flex items-center z-40 transition-opacity duration-1000",
-        isLoaded ? "opacity-100" : "opacity-0",
-        isDarkMode ? "bg-slate-900/40" : "bg-white/40"
-      )}>
-        <div className="flex items-center justify-around w-full max-w-[1440px] mx-auto px-4 gap-4 overflow-x-auto scrollbar-none">
-          {Object.entries(continentalStats).map(([continent, count]) => {
-            const label = continent === "NorthAmerica" ? "N. America" : 
-                          continent === "SouthAmerica" ? "S. America" : 
-                          continent;
-            return (
-              <div key={continent} className="flex items-center gap-3 min-w-fit border-l border-accent/20 pl-4 py-1">
-                <span className="text-[8px] md:text-[10px] font-black uppercase tracking-widest opacity-40 whitespace-nowrap">{label}</span>
-                <span className="text-[12px] md:text-[14px] font-bold text-accent tabular-nums">{count.toLocaleString()}</span>
-                {/* Micro sparkline */}
-                <div className="w-12 h-1 bg-slate-800/20 md:flex hidden overflow-hidden rounded-full">
-                  <div 
-                    className="h-full bg-accent transition-all duration-1000" 
-                    style={{ width: `${Math.min(100, (count / (totalUsers || 1)) * 300)}%` }} 
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Interactive HUD: Magnetic Tooltip Card */}
-      <div 
-        className={cn(
-          "fixed pointer-events-none z-[1000] p-4 transition-opacity transition-transform duration-100 transform",
-          hoverInfo.visible ? "opacity-100 scale-100 translate-y-0" : "opacity-0 scale-95 translate-y-10"
-        )}
-        style={{ 
-          left: isMobile ? '50%' : hoverInfo.x + (hoverInfo.x > window.innerWidth / 2 ? -280 : 25), 
-          top: isMobile ? '100px' : hoverInfo.y + (hoverInfo.y < 250 ? 50 : -140),
-          transform: isMobile ? 'translateX(-50%) skew-x(-12deg)' : 'skew-x(-12deg)',
-          willChange: 'transform, left, top' 
-        }}
-      >
-        <div className={cn(
-          "min-w-[200px] md:min-w-[240px] p-4 md:p-5 border-2 border-[var(--primary)]/50 shadow-[0_0_50px_rgba(0,0,0,0.5)]",
-          isDarkMode ? "bg-[var(--bg-surface)]" : "bg-[var(--bg-surface)]"
-        )}>
-          <div className={cn("flex flex-col gap-3", !isMobile && "skew-x-[12deg]")}>
-            <div className="flex items-center justify-between">
-              <span className="text-[9px] font-black uppercase tracking-[0.4em] text-[var(--primary)] opacity-60">Uplink.Analytics</span>
-              <div className="w-2.5 h-2.5 bg-[var(--primary)] rotate-45 animate-pulse shadow-[0_0_10px_var(--primary)]" />
-            </div>
-            <span className="text-2xl font-[900] tracking-tighter uppercase leading-none border-b-2 border-[var(--primary)]/20 pb-3 mb-2 text-[var(--text-main)]">{hoverInfo.name}</span>
-            <div className="grid grid-cols-2 gap-6 mt-1">
-              <div className="flex flex-col">
-                <span className="text-[8px] font-black opacity-40 uppercase tracking-widest">Latency</span>
-                <span className="text-sm font-black text-[var(--primary)]">{hoverInfo.stats.latency}ms</span>
-              </div>
-              <div className="flex flex-col">
-                <span className="text-[8px] font-black opacity-40 uppercase tracking-widest">Active Peers</span>
-                <span className="text-sm font-black text-[var(--primary)]">{hoverInfo.stats.nodes}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-
-      {/* Global CSS for animations */}
-      <style dangerouslySetInnerHTML={{ __html: `
-        @keyframes marquee {
-          0% { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
+       <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes shoot-arc {
+           0% { stroke-dashoffset: 600; opacity: 0; }
+           10% { opacity: 1; }
+           80% { opacity: 1; }
+           100% { stroke-dashoffset: -600; opacity: 0; }
         }
-        @keyframes loading-shimmer {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(200%); }
+        .animate-arc {
+           animation-name: shoot-arc;
+           animation-timing-function: linear;
+           animation-iteration-count: infinite;
         }
-        .badges-layer text {
-          user-select: none;
-          pointer-events: none;
-        }
-      `}} />
-
-      <style dangerouslySetInnerHTML={{ __html: `
-        .fill-land { fill: var(--land-fill); }
-        .stroke-land { stroke: var(--land-stroke); }
-        .fill-land-active { fill: var(--land-active); }
-        .stroke-accent { stroke: var(--accent); }
-      `}} />
+       `}} />
     </div>
   );
 };

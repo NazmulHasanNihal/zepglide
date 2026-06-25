@@ -3,12 +3,20 @@ import { User, UploadCloud, Edit3, Mail, FileText, MapPin, Globe, HardDrive, Shi
 
 import { supabase } from '../../lib/supabase';
 
-export default function SettingsView({ isDarkMode, setIsDarkMode, activeTheme, setActiveTheme, themes, profile, setProfile, preferences, setPreferences, showToast }) {
+export default function SettingsView({ isDarkMode, setIsDarkMode, activeTheme, setActiveTheme, themes, profile, setProfile, preferences, setPreferences, showToast, customTheme, setCustomTheme }) {
   const handleProfileChange = (key, value) => setProfile(prev => ({ ...prev, [key]: value }));
   const handlePrefChange = (key, value) => setPreferences(prev => ({ ...prev, [key]: value }));
 
   const fileInputRef = useRef(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  const isPro = profile?.plan === 'Pro' || profile?.plan === 'Teams';
+
+  const handleCustomThemeChange = (key, value) => {
+    const updatedCustom = { ...customTheme, [key]: value };
+    setCustomTheme(updatedCustom);
+    handlePrefChange('customTheme', updatedCustom);
+  };
 
   const handleAvatarSelect = async (e) => {
     const file = e.target.files?.[0];
@@ -64,7 +72,7 @@ export default function SettingsView({ isDarkMode, setIsDarkMode, activeTheme, s
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
-      const res = await fetch('/api/profile', {
+      const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/profile', {
         method: 'PUT',
         headers: { 
           'Content-Type': 'application/json',
@@ -185,7 +193,7 @@ export default function SettingsView({ isDarkMode, setIsDarkMode, activeTheme, s
                 enabled={preferences.cloudBridgeFallback} 
                 onChange={v => handlePrefChange('cloudBridgeFallback', v)} 
                 color="text-[var(--warning)]"
-                locked={profile.plan !== 'Pro' && profile.plan !== 'Teams'}
+                locked={!isPro}
               />
            </div>
         </div>
@@ -198,6 +206,7 @@ export default function SettingsView({ isDarkMode, setIsDarkMode, activeTheme, s
               <ToggleSwitch enabled={isDarkMode} onChange={v => setIsDarkMode(v)} />
             </div>
           </div>
+          
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-6">
             {Object.entries(themes).map(([key, themeData]) => (
               <button 
@@ -212,7 +221,46 @@ export default function SettingsView({ isDarkMode, setIsDarkMode, activeTheme, s
                 <span className="text-[10px] font-black text-[var(--text-main)] uppercase tracking-[0.2em] truncate w-full text-center">{themeData.name.split(' ')[0]}</span>
               </button>
             ))}
+            
+            {/* Custom Brand Option */}
+            <button 
+              onClick={() => {
+                if (isPro) setActiveTheme('custom');
+                else showToast("Custom branding requires a Pro plan.", "warning");
+              }} 
+              className={`p-6 rounded-[2.5rem] border-2 flex flex-col items-center gap-5 transition-all duration-500 relative ${activeTheme === 'custom' ? 'border-[var(--primary)] bg-[var(--primary-10)] shadow-2xl scale-105' : 'border-[var(--border-main)] bg-[var(--bg-main)] hover:border-[var(--primary-30)]'}`}
+            >
+              {!isPro && <div className="absolute inset-0 bg-[var(--bg-main)]/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center rounded-[2.5rem]"><Lock size={20} className="text-[var(--warning)] mb-1"/><span className="text-[10px] font-black uppercase text-[var(--text-main)] tracking-widest">Pro</span></div>}
+              <div className="flex w-full h-14 rounded-[1.25rem] overflow-hidden border-2 border-[var(--border-main)] shadow-lg bg-gradient-to-tr from-pink-500 via-purple-500 to-indigo-500">
+              </div>
+              <span className="text-[10px] font-black text-[var(--text-main)] uppercase tracking-[0.2em] truncate w-full text-center">Custom</span>
+            </button>
           </div>
+
+          {activeTheme === 'custom' && (
+            <div className="mt-8 pt-8 border-t border-[var(--border-main)] animate-in fade-in slide-in-from-top-4 duration-300">
+              <h4 className="text-sm font-black uppercase tracking-widest text-[var(--text-main)] mb-6 flex items-center gap-2"><Palette size={16} className="text-[var(--primary)]"/> Custom Brand Configuration</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                 <div className="flex flex-col gap-2">
+                   <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Primary Color</label>
+                   <input type="color" value={customTheme?.primary || '#10B981'} onChange={e => handleCustomThemeChange('primary', e.target.value)} className="w-full h-12 rounded-xl cursor-pointer bg-[var(--bg-main)] border border-[var(--border-main)] p-1" />
+                 </div>
+                 <div className="flex flex-col gap-2">
+                   <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Background Main</label>
+                   <input type="color" value={customTheme?.bgMain || '#000000'} onChange={e => handleCustomThemeChange('bgMain', e.target.value)} className="w-full h-12 rounded-xl cursor-pointer bg-[var(--bg-main)] border border-[var(--border-main)] p-1" />
+                 </div>
+                 <div className="flex flex-col gap-2">
+                   <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Background Surface</label>
+                   <input type="color" value={customTheme?.bgSurface || '#111111'} onChange={e => handleCustomThemeChange('bgSurface', e.target.value)} className="w-full h-12 rounded-xl cursor-pointer bg-[var(--bg-main)] border border-[var(--border-main)] p-1" />
+                 </div>
+                 <div className="flex flex-col gap-2 sm:col-span-3">
+                   <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Brand Logo URL</label>
+                   <input type="text" placeholder="https://..." value={customTheme?.logoUrl || ''} onChange={e => handleCustomThemeChange('logoUrl', e.target.value)} className="w-full bg-[var(--bg-main)] px-4 py-3 rounded-xl border border-[var(--border-main)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-10)] text-[var(--text-main)] font-bold text-sm focus:outline-none transition-all" />
+                 </div>
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
     </div>

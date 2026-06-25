@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Download, Radar, CheckCircle2, FileText, Smartphone, Gauge, Activity, Clock, ShieldAlert, RefreshCw, File as FileIcon } from 'lucide-react';
+import { Download, Radar, CheckCircle2, FileText, Smartphone, Gauge, Activity, Clock, ShieldAlert, RefreshCw, File as FileIcon, ShieldCheck, Zap, Lock } from 'lucide-react';
 import { useWebRTC } from '../../hooks/useWebRTC';
 
 export default function ReceiveView({ showToast, playSfx }) {
   const [pin, setPin] = useState('');
-  const { status, progress, speed, eta, metadata, receivedFile, joinSession, cancelTransfer, retryTransfer } = useWebRTC();
+  const [password, setPassword] = useState('');
+  const { status, progress, speed, eta, metadata, receivedFile, errorMsg, joinSession, cancelTransfer, retryTransfer } = useWebRTC();
   
   const facts = ["Bypassing Symmetric NAT...", "Establishing Quantum-Safe Keys...", "Securing P2P WebRTC Layer...", "Discovering Mesh Route..."];
   const [factIndex, setFactIndex] = useState(0);
@@ -16,18 +17,25 @@ export default function ReceiveView({ showToast, playSfx }) {
   }, [status]);
 
   useEffect(() => {
-    // Check URL for pin
     const params = new URLSearchParams(window.location.search);
     const pinParam = params.get('pin');
     if (pinParam && pinParam.length === 6 && status === 'idle') {
       setPin(pinParam);
-      joinSession(pinParam);
+      // Wait for user to input password if needed, or try without password first
+      // Actually, if it has a password, we shouldn't auto join. We let them see the PIN is filled and type password.
+      // For now, let's just try auto-joining without password if there's no password in URL
     }
   }, [joinSession, status]);
 
+  useEffect(() => {
+    if (errorMsg) {
+      showToast(errorMsg, "error");
+    }
+  }, [errorMsg, showToast]);
+
   const handleJoin = () => {
     if (pin.length === 6) {
-      joinSession(pin);
+      joinSession(pin, password);
     } else {
       showToast("Please enter a 6-digit PIN", "info");
     }
@@ -40,9 +48,20 @@ export default function ReceiveView({ showToast, playSfx }) {
     const newPin = newPinArr.join('');
     setPin(newPin);
     
-    // Auto-focus next input
     if (value && index < 5) {
       const nextInput = document.querySelector(`input[data-index="${index + 1}"]`);
+      if (nextInput) nextInput.focus();
+    }
+  };
+
+  const handlePinPaste = (e) => {
+    e.preventDefault();
+    const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    if (pastedData.length > 0) {
+      setPin(pastedData.padEnd(6, ''));
+      // Auto-focus the next empty input or the last one
+      const focusIndex = Math.min(pastedData.length, 5);
+      const nextInput = document.querySelector(`input[data-index="${focusIndex}"]`);
       if (nextInput) nextInput.focus();
     }
   };
@@ -80,6 +99,28 @@ export default function ReceiveView({ showToast, playSfx }) {
                  </p>
               </div>
            </div>
+        ) : status === 'firewall_blocked' ? (
+           <div className="flex flex-col items-center py-6 w-full animate-in slide-in-from-bottom-8 duration-500 bg-[var(--warning-10)] p-6 rounded-3xl border border-[var(--warning-30)] text-center">
+              <div className="h-16 w-16 bg-[var(--warning)] text-white rounded-[1.5rem] flex items-center justify-center mx-auto mb-6 shadow-sm border border-[var(--warning-30)]">
+                <ShieldCheck size={28} />
+              </div>
+              <h3 className="text-2xl font-black text-[var(--text-main)] tracking-tight uppercase mb-2">Network Restricted by Firewall</h3>
+              <p className="text-sm font-bold text-[var(--text-muted)] mb-8 px-4 max-w-sm">
+                Your network is blocking P2P connections. Upgrade to Pro to bypass strict firewalls using our Premium High-Speed TURN Relay Channels.
+              </p>
+              <button 
+                onClick={() => window.open('https://stripe.com', '_blank')}
+                className="w-full bg-[var(--warning)] text-[var(--bg-main)] hover:brightness-110 px-8 py-4 mb-4 rounded-xl font-black text-xs uppercase tracking-widest transition-all duration-300 shadow-xl active:scale-95 flex items-center justify-center gap-2"
+              >
+                <Zap size={16} /> Upgrade to Pro
+              </button>
+              <button 
+                onClick={cancelTransfer}
+                className="w-full text-[var(--text-muted)] hover:text-[var(--danger)] hover:bg-[var(--danger-10)] px-8 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all duration-300 active:scale-95"
+              >
+                Cancel
+              </button>
+           </div>
         ) : (status === 'transferring' || status === 'error') ? (
             <div className="flex flex-col w-full animate-in slide-in-from-bottom-8 duration-500">
                
@@ -89,20 +130,21 @@ export default function ReceiveView({ showToast, playSfx }) {
                       <ShieldAlert size={28} />
                     </div>
                     <h3 className="text-2xl font-black text-[var(--danger)] tracking-tight uppercase mb-2">Connection Dropped</h3>
-                    <p className="text-sm font-bold text-[var(--text-muted)] mb-8 text-center px-4 max-w-sm">The P2P WebRTC link was severed.</p>
+                    <p className="text-sm font-bold text-[var(--text-muted)] mb-8 text-center px-4 max-w-sm">
+                      {errorMsg || 'The P2P WebRTC link was severed.'}
+                    </p>
                     
                     <button 
                       onClick={() => {
                           retryTransfer();
-                          const joinedPin = pin.join('');
-                          if (joinedPin.length === 6) joinSession(joinedPin);
+                          if (pin.length === 6) joinSession(pin, password);
                       }}
                       className="w-full bg-[var(--danger)] text-white hover:brightness-110 px-8 py-4 mb-4 rounded-xl font-black text-xs uppercase tracking-widest transition-all duration-300 shadow-xl active:scale-95 flex items-center justify-center gap-2"
                     >
                       <RefreshCw size={16} /> Re-Join Connection
                     </button>
                     <button 
-                      onClick={() => { setPin([]); cancelTransfer(); }}
+                      onClick={() => { setPin(''); cancelTransfer(); }}
                       className="w-full text-[var(--text-muted)] hover:text-[var(--danger)] hover:bg-[var(--danger-10)] px-8 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all duration-300 active:scale-95"
                     >
                       Abort
@@ -208,13 +250,14 @@ export default function ReceiveView({ showToast, playSfx }) {
               </div>
           </div>
         ) : (
-           <div className="animate-in fade-in duration-500 text-[var(--text-main)]">
+           <div className="animate-in fade-in duration-500 text-[var(--text-main)] w-full">
               <div className="h-20 w-20 bg-[var(--primary-10)] text-[var(--primary)] rounded-[1.5rem] flex items-center justify-center mx-auto mb-8 shrink-0 shadow-inner border border-[var(--primary-10)]">
                 <Download size={36} />
               </div>
               <h2 className="text-2xl font-black text-[var(--text-main)] mb-3 tracking-tighter uppercase">Enter Node PIN</h2>
               <p className="text-[var(--text-muted)] text-sm mb-10 font-bold tracking-tight">Identify the incoming handshake.</p>
-              <div className="flex justify-center gap-2 mb-12">
+              
+              <div className="flex justify-center gap-2 mb-6">
                 {[...Array(6)].map((_, i) => (
                   <input 
                     key={i} data-index={i} type="text" maxLength="6" 
@@ -222,9 +265,22 @@ export default function ReceiveView({ showToast, playSfx }) {
                     placeholder="-" 
                     value={pin[i] || ''}
                     onChange={(e) => handlePinChange(i, e.target.value)}
+                    onPaste={handlePinPaste}
                   />
                 ))}
               </div>
+              
+              <div className="w-full max-w-xs mx-auto mb-10 flex items-center gap-3 bg-[var(--bg-main)] px-4 py-2 rounded-xl border border-[var(--border-main)] focus-within:border-[var(--primary)]">
+                <Lock size={16} className="text-[var(--text-muted)]" />
+                <input 
+                  type="password" 
+                  placeholder="Password (if required)" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="bg-transparent border-none text-sm font-bold text-[var(--text-main)] w-full focus:outline-none"
+                />
+              </div>
+
               <button 
                 onClick={handleJoin} 
                 className="w-full bg-[var(--text-main)] text-[var(--bg-main)] hover:scale-[1.02] active:scale-95 font-black py-4 rounded-2xl transition-all duration-300 uppercase tracking-widest text-xs shadow-xl"

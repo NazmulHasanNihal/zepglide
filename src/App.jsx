@@ -5,63 +5,63 @@ import AuthModal from './components/modals/AuthModal';
 const THEMES = {
   ocean: {
     name: 'Ocean (Default)',
-    primary: '#00ADB5', primaryContent: '#FFFFFF', success: '#00ADB5', danger: '#F43F5E', warning: '#F59E0B', accent: '#8B5CF6',
+    primary: '#00F0FF', primaryContent: '#000000', success: '#00FA9A', danger: '#FF0055', warning: '#FFB800', accent: '#7000FF',
     light: { bgMain: '#F8FAFC', bgSurface: '#FFFFFF', textMain: '#0F172A', textMuted: '#475569', borderMain: 'rgba(15, 23, 42, 0.08)', bgHover: '#F1F5F9' },
-    dark: { bgMain: '#1E293B', bgSurface: '#334155', textMain: '#F8FAFC', textMuted: '#94A3B8', borderMain: 'rgba(255, 255, 255, 0.1)', bgHover: '#475569' }
+    dark: { bgMain: '#0B1120', bgSurface: '#1E293B', textMain: '#F8FAFC', textMuted: '#94A3B8', borderMain: 'rgba(255, 255, 255, 0.1)', bgHover: '#334155' }
   },
   deepBlue: {
-    name: 'Deep Blue',
-    primary: '#3282B8', primaryContent: '#FFFFFF', success: '#3282B8', danger: '#E62727', warning: '#FF9F00', accent: '#0F4C75',
+    name: 'Electric Blue',
+    primary: '#1E90FF', primaryContent: '#FFFFFF', success: '#00FFFF', danger: '#FF3366', warning: '#FFCC00', accent: '#8A2BE2',
     light: { bgMain: '#F0F4F8', bgSurface: '#FFFFFF', textMain: '#102A43', textMuted: '#334E68', borderMain: 'rgba(16, 42, 67, 0.1)', bgHover: '#D9E2EC' },
-    dark: { bgMain: '#102A43', bgSurface: '#243B53', textMain: '#F0F4F8', textMuted: '#9FB3C8', borderMain: 'rgba(255, 255, 255, 0.1)', bgHover: '#334E68' }
+    dark: { bgMain: '#081421', bgSurface: '#102A43', textMain: '#F0F4F8', textMuted: '#9FB3C8', borderMain: 'rgba(255, 255, 255, 0.1)', bgHover: '#243B53' }
   },
   retro: {
-    name: 'Retro Classic',
-    primary: '#E62727', primaryContent: '#FFFFFF', success: '#1E93AB', danger: '#E62727', warning: '#F4631E', accent: '#1E93AB',
+    name: 'Retro Arcade',
+    primary: '#FF0055', primaryContent: '#FFFFFF', success: '#00FFCC', danger: '#FF0055', warning: '#FF8800', accent: '#00FFCC',
     light: { bgMain: '#F4F1EA', bgSurface: '#FFFFFF', textMain: '#2A2A2A', textMuted: '#595959', borderMain: 'rgba(42, 42, 42, 0.1)', bgHover: '#EAE6DB' },
-    dark: { bgMain: '#2D2A26', bgSurface: '#3D3935', textMain: '#F4F1EA', textMuted: '#AFA9A0', borderMain: 'rgba(244, 241, 234, 0.1)', bgHover: '#4D4843' }
+    dark: { bgMain: '#1A1815', bgSurface: '#2D2A26', textMain: '#F4F1EA', textMuted: '#AFA9A0', borderMain: 'rgba(244, 241, 234, 0.1)', bgHover: '#3D3935' }
   },
   neonPurple: {
     name: 'Neon Cyber',
-    primary: '#B13BFF', primaryContent: '#FFFFFF', success: '#1DCD9F', danger: '#F43F5E', warning: '#FFCC00', accent: '#FFCC00',
+    primary: '#FF00FF', primaryContent: '#FFFFFF', success: '#00FFFF', danger: '#FF3333', warning: '#FFFF00', accent: '#00FFFF',
     light: { bgMain: '#F5F3FF', bgSurface: '#FFFFFF', textMain: '#1E1B4B', textMuted: '#4C1D95', borderMain: 'rgba(30, 27, 75, 0.1)', bgHover: '#EDE9FE' },
-    dark: { bgMain: '#1E1B4B', bgSurface: '#2E1065', textMain: '#F5F3FF', textMuted: '#C4B5FD', borderMain: 'rgba(245, 243, 255, 0.1)', bgHover: '#4C1D95' }
+    dark: { bgMain: '#0F0826', bgSurface: '#1E1B4B', textMain: '#F5F3FF', textMuted: '#C4B5FD', borderMain: 'rgba(245, 243, 255, 0.1)', bgHover: '#2E1065' }
   },
   solaris: {
     name: 'Solaris Gold',
-    primary: '#D4AF37', primaryContent: '#000000', success: '#10B981', danger: '#EF4444', warning: '#F59E0B', accent: '#92400E',
+    primary: '#FFD700', primaryContent: '#000000', success: '#00FF00', danger: '#FF0000', warning: '#FFA500', accent: '#FF4500',
     light: { bgMain: '#FFFBEB', bgSurface: '#FFFFFF', textMain: '#451A03', textMuted: '#92400E', borderMain: 'rgba(146, 64, 14, 0.1)', bgHover: '#FEF3C7' },
-    dark: { bgMain: '#1A1A1A', bgSurface: '#262626', textMain: '#FDE68A', textMuted: '#D4AF37', borderMain: 'rgba(212, 175, 55, 0.1)', bgHover: '#404040' }
+    dark: { bgMain: '#0F0F0F', bgSurface: '#1A1A1A', textMain: '#FDE68A', textMuted: '#D4AF37', borderMain: 'rgba(212, 175, 55, 0.1)', bgHover: '#262626' }
   },
   forest: {
-    name: 'Deep Forest',
-    primary: '#10B981', primaryContent: '#FFFFFF', success: '#34D399', danger: '#E11D48', warning: '#FBBF24', accent: '#064E3B',
+    name: 'Toxic Forest',
+    primary: '#39FF14', primaryContent: '#000000', success: '#00FF7F', danger: '#FF0033', warning: '#FFD700', accent: '#00FA9A',
     light: { bgMain: '#F0FDF4', bgSurface: '#FFFFFF', textMain: '#064E3B', textMuted: '#15803D', borderMain: 'rgba(6, 78, 59, 0.1)', bgHover: '#DCFCE7' },
-    dark: { bgMain: '#064E3B', bgSurface: '#065F46', textMain: '#ECFDF5', textMuted: '#A7F3D0', borderMain: 'rgba(255, 255, 255, 0.05)', bgHover: '#064E3B' }
+    dark: { bgMain: '#021F17', bgSurface: '#064E3B', textMain: '#ECFDF5', textMuted: '#A7F3D0', borderMain: 'rgba(255, 255, 255, 0.05)', bgHover: '#065F46' }
   },
   glacier: {
     name: 'Arctic Glacier',
-    primary: '#06B6D4', primaryContent: '#FFFFFF', success: '#22D3EE', danger: '#F43F5E', warning: '#F59E0B', accent: '#083344',
+    primary: '#00FFFF', primaryContent: '#000000', success: '#7DF9FF', danger: '#FF007F', warning: '#FFBF00', accent: '#00BFFF',
     light: { bgMain: '#F0FDFF', bgSurface: '#FFFFFF', textMain: '#083344', textMuted: '#0E7490', borderMain: 'rgba(8, 51, 68, 0.1)', bgHover: '#CFFAFE' },
-    dark: { bgMain: '#082F49', bgSurface: '#0C4A6E', textMain: '#E0F2FE', textMuted: '#7DD3FC', borderMain: 'rgba(255, 255, 255, 0.1)', bgHover: '#075985' }
+    dark: { bgMain: '#041724', bgSurface: '#082F49', textMain: '#E0F2FE', textMuted: '#7DD3FC', borderMain: 'rgba(255, 255, 255, 0.1)', bgHover: '#0C4A6E' }
   },
   volcano: {
     name: 'Volcanic Ash',
-    primary: '#EF4444', primaryContent: '#FFFFFF', success: '#DC2626', danger: '#B91C1C', warning: '#F97316', accent: '#450A0A',
+    primary: '#FF3333', primaryContent: '#FFFFFF', success: '#FF5555', danger: '#CC0000', warning: '#FF9900', accent: '#FF0055',
     light: { bgMain: '#FEF2F2', bgSurface: '#FFFFFF', textMain: '#450A0A', textMuted: '#991B1B', borderMain: 'rgba(69, 10, 10, 0.1)', bgHover: '#FEE2E2' },
-    dark: { bgMain: '#450A0A', bgSurface: '#7F1D1D', textMain: '#FEE2E2', textMuted: '#FCA5A5', borderMain: 'rgba(255, 255, 255, 0.1)', bgHover: '#991B1B' }
+    dark: { bgMain: '#240505', bgSurface: '#450A0A', textMain: '#FEE2E2', textMuted: '#FCA5A5', borderMain: 'rgba(255, 255, 255, 0.1)', bgHover: '#7F1D1D' }
   },
   monochrome: {
     name: 'Slate Minimal',
-    primary: '#64748B', primaryContent: '#FFFFFF', success: '#94A3B8', danger: '#475569', warning: '#CBD5E1', accent: '#1E293B',
+    primary: '#94A3B8', primaryContent: '#000000', success: '#CBD5E1', danger: '#64748B', warning: '#E2E8F0', accent: '#475569',
     light: { bgMain: '#F8FAFC', bgSurface: '#FFFFFF', textMain: '#0F172A', textMuted: '#475569', borderMain: 'rgba(15, 23, 42, 0.1)', bgHover: '#F1F5F9' },
-    dark: { bgMain: '#0F172A', bgSurface: '#1E293B', textMain: '#F8FAFC', textMuted: '#94A3B8', borderMain: 'rgba(255, 255, 255, 0.1)', bgHover: '#334155' }
+    dark: { bgMain: '#080C17', bgSurface: '#0F172A', textMain: '#F8FAFC', textMuted: '#94A3B8', borderMain: 'rgba(255, 255, 255, 0.1)', bgHover: '#1E293B' }
   },
   midnight: {
     name: 'Midnight Stealth',
-    primary: '#38BDF8', primaryContent: '#FFFFFF', success: '#0EA5E9', danger: '#0369A1', warning: '#0284C7', accent: '#000000',
+    primary: '#00E5FF', primaryContent: '#000000', success: '#00FF88', danger: '#FF0044', warning: '#FFCC00', accent: '#FFFFFF',
     light: { bgMain: '#F0F9FF', bgSurface: '#FFFFFF', textMain: '#082F49', textMuted: '#075985', borderMain: 'rgba(8, 47, 73, 0.1)', bgHover: '#E0F2FE' },
-    dark: { bgMain: '#000000', bgSurface: '#111111', textMain: '#FFFFFF', textMuted: '#A1A1AA', borderMain: 'rgba(255, 255, 255, 0.1)', bgHover: '#18181B' }
+    dark: { bgMain: '#000000', bgSurface: '#090909', textMain: '#FFFFFF', textMuted: '#A1A1AA', borderMain: 'rgba(255, 255, 255, 0.1)', bgHover: '#111111' }
   }
 };
 
@@ -70,6 +70,7 @@ export default function App() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [activeTheme, setActiveTheme] = useState('ocean');
+  const [customTheme, setCustomTheme] = useState({ primary: '#10B981', bgMain: '#000000', bgSurface: '#111111', logoUrl: '' });
 
   useEffect(() => {
     import('./lib/supabase').then(({ supabase }) => {
@@ -95,7 +96,15 @@ export default function App() {
     });
   }, []);
 
-  const themeData = THEMES[activeTheme];
+  // Compute theme data including custom brand
+  const themeData = activeTheme === 'custom' ? {
+    ...THEMES.ocean, // fallback base
+    name: 'Custom Brand',
+    primary: customTheme.primary || '#10B981',
+    light: { ...THEMES.ocean.light, bgMain: customTheme.bgMain || '#F8FAFC', bgSurface: customTheme.bgSurface || '#FFFFFF' },
+    dark: { ...THEMES.ocean.dark, bgMain: customTheme.bgMain || '#000000', bgSurface: customTheme.bgSurface || '#111111' }
+  } : THEMES[activeTheme] || THEMES.ocean;
+
   const modeData = isDarkMode ? themeData.dark : themeData.light;
 
   const hexToRgb = useCallback((hex) => {
@@ -147,7 +156,8 @@ export default function App() {
           setIsAuthenticated(false);
         }}
         isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode} 
-        activeTheme={activeTheme} setActiveTheme={setActiveTheme} themes={THEMES}
+        activeTheme={activeTheme} setActiveTheme={setActiveTheme} 
+        themes={THEMES} customTheme={customTheme} setCustomTheme={setCustomTheme}
       />
       {showAuthModal && (
         <AuthModal 
