@@ -281,31 +281,46 @@ export function useWebRTC() {
             // Small delay to let receiver process metadata
             await new Promise(resolve => setTimeout(resolve, 100));
 
-            // Stream file using ReadableStream (zero-copy)
+            // Stream file using ReadableStream
             const stream = file.stream();
             const reader = stream.getReader();
+            const CHUNK_SIZE = 64 * 1024; // 64KB is optimal for WebRTC
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
 
-                for (const dc of channels) {
-                    if (dc.readyState !== 'open') continue;
+                let offset = 0;
+                while (offset < value.byteLength) {
+                    const end = Math.min(offset + CHUNK_SIZE, value.byteLength);
+                    const chunk = value.slice(offset, end);
+                    
+                    for (const dc of channels) {
+                        if (dc.readyState !== 'open') continue;
 
-                    // Backpressure: wait if buffer is full
-                    if (dc.bufferedAmount > dc.bufferedAmountLowThreshold) {
-                        await new Promise(resolve => {
-                            dc.onbufferedamountlow = () => {
-                                dc.onbufferedamountlow = null;
-                                resolve();
-                            };
-                        });
+                        // Bulletproof backpressure polling
+                        while (dc.bufferedAmount > dc.bufferedAmountLowThreshold) {
+                            await new Promise(resolve => {
+                                const checkBuffer = () => resolve();
+                                dc.addEventListener('bufferedamountlow', checkBuffer);
+                                setTimeout(() => {
+                                    dc.removeEventListener('bufferedamountlow', checkBuffer);
+                                    resolve();
+                                }, 50); // Poll every 50ms just in case event is missed
+                            });
+                        }
+                        
+                        try {
+                            dc.send(chunk.buffer || chunk);
+                        } catch (err) {
+                            console.error('[WebRTC] Send error:', err);
+                        }
                     }
-                    dc.send(value.buffer || value);
-                }
 
-                transferredBytesRef.current += value.byteLength;
-                setProgress(Math.round((transferredBytesRef.current / file.size) * 100));
+                    transferredBytesRef.current += chunk.byteLength;
+                    setProgress(Math.round((transferredBytesRef.current / file.size) * 100));
+                    offset = end;
+                }
             }
 
             // Delay between files so receiver can finalize
