@@ -52,14 +52,27 @@ const NAME_MAPPING = {
 };
 
 const LiveTransferCounter = () => {
-  const [totalTransfers, setTotalTransfers] = useState(11470641);
+  const [totalTransfers, setTotalTransfers] = useState(0);
+  
   useEffect(() => {
-     const int = setInterval(() => {
-        setTotalTransfers(prev => prev + Math.floor(Math.random() * 15) + 1);
-     }, 2000);
+     const fetchStats = async () => {
+       try {
+         const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/global-stats');
+         const data = await res.json();
+         if (data.totalTransfers !== undefined) {
+           setTotalTransfers(data.totalTransfers);
+         }
+       } catch (err) {
+         console.error("Failed to fetch global stats");
+       }
+     };
+     fetchStats();
+     // Refresh every 10 seconds
+     const int = setInterval(fetchStats, 10000);
      return () => clearInterval(int);
   }, []);
-  return <div className="text-[var(--primary)] text-xl md:text-2xl font-black tracking-widest mt-2">{totalTransfers.toLocaleString()} TRANSFERS ON THIS DAY</div>;
+  
+  return <div className="text-[var(--primary)] text-xl md:text-2xl font-black tracking-widest mt-2">{totalTransfers.toLocaleString()} TRANSFERS ON RECORD</div>;
 };
 
 const GlobalMapView = () => {
@@ -73,15 +86,8 @@ const GlobalMapView = () => {
   
   const [isCollapsed, setIsCollapsed] = useState(true);
   
-  const [recentFiles, setRecentFiles] = useState([
-    { id: 1, fromCode: 'DE', toCode: 'US', fileName: 'kernel_v4.dmg', fileSize: '1.4 GB', type: 'media' },
-    { id: 2, fromCode: 'IN', toCode: 'IN', fileName: 'dataset_mesh.zip', fileSize: '8.2 GB', type: 'archive' },
-    { id: 3, fromCode: 'GB', toCode: 'JP', fileName: 'screencast.mov', fileSize: '310 MB', type: 'media' },
-    { id: 4, fromCode: 'BR', toCode: 'BR', fileName: 'backup_db.tar.gz', fileSize: '540 MB', type: 'archive' },
-    { id: 5, fromCode: 'FR', toCode: 'CA', fileName: 'design_specs.pdf', fileSize: '24 MB', type: 'document' }
-  ]);
-
-  const [globalStats, setGlobalStats] = useState({ activePeers: 142054, bandwidth: 5.4, filesInFlight: 842, dataSynced: 142.5, distanceBridged: 894520 });
+  const [recentFiles, setRecentFiles] = useState([]);
+  const [globalStats, setGlobalStats] = useState({ activePeers: 0, bandwidth: 0, filesInFlight: 0, dataSynced: 0, distanceBridged: 0 });
   
   const svgRef = useRef(null);
   const [clickEffects, setClickEffects] = useState([]);
@@ -100,37 +106,6 @@ const GlobalMapView = () => {
        setClickEffects(prev => prev.filter(c => c.id !== id));
     }, 1000);
   };
-
-  const fileNames = ['render_final.mp4', 'weights_gpt2.bin', 'source_code.zip', 'index.html', 'assets.tar', 'presentation.pptx', 'audio_track.wav', 'docker-compose.yml'];
-  const fileSizes = ['124 MB', '4.2 GB', '84 MB', '24 KB', '812 MB', '15 MB', '42 MB', '8 KB'];
-  const countries = ['US', 'DE', 'GB', 'JP', 'BR', 'IN', 'FR', 'CA', 'AU', 'ZA'];
-
-  // Stats and recent files simulation interval
-  useEffect(() => {
-    const int = setInterval(() => {
-      setRecentFiles(prev => {
-        const next = [...prev];
-        const from = countries[Math.floor(Math.random() * countries.length)];
-        const to = countries[Math.floor(Math.random() * countries.length)];
-        const file = fileNames[Math.floor(Math.random() * fileNames.length)];
-        const size = fileSizes[Math.floor(Math.random() * fileSizes.length)];
-        const type = file.endsWith('mp4') || file.endsWith('mov') || file.endsWith('wav') ? 'media' : file.endsWith('zip') || file.endsWith('tar') || file.endsWith('gz') ? 'archive' : 'document';
-        
-        next.unshift({ id: Date.now(), fromCode: from, toCode: to, fileName: file, fileSize: size, type });
-        if (next.length > 8) next.pop();
-        return next;
-      });
-
-      setGlobalStats(prev => ({
-        activePeers: prev.activePeers + Math.floor(Math.random() * 50) - 20,
-        bandwidth: Math.max(1.0, prev.bandwidth + (Math.random() * 0.4 - 0.2)),
-        filesInFlight: prev.filesInFlight + Math.floor(Math.random() * 10) - 4,
-        dataSynced: prev.dataSynced + (Math.random() * 0.15),
-        distanceBridged: prev.distanceBridged + Math.floor(Math.random() * 4500)
-      }));
-    }, 2500);
-    return () => clearInterval(int);
-  }, []);
 
   useEffect(() => {
     fetch('/world.svg')

@@ -237,6 +237,18 @@ app.post('/api/transfers', async (req, res) => {
   
   res.json({ success: true, transfer: { ...data, to: data.recipient } });
 });
+// --- GLOBAL STATS (For Global Hub) ---
+app.get('/api/global-stats', async (req, res) => {
+  try {
+    const { count, error } = await supabase.from('transfers').select('*', { count: 'exact', head: true });
+    if (error) throw error;
+    res.json({ totalTransfers: count || 0 });
+  } catch (err) {
+    console.error('Error fetching global stats:', err);
+    res.status(500).json({ error: 'Failed to fetch global stats' });
+  }
+});
+
 // --- PROFILE STATS ---
 app.get('/api/profile/stats', async (req, res) => {
   const user = await getAuthUser(req);
