@@ -1,12 +1,78 @@
 import express from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 import cors from 'cors';
 import { supabase } from './supabase.js';
 
 const app = express();
+const httpServer = createServer(app);
 const port = process.env.PORT || 3001;
 
-app.use(cors());
+app.use(cors({ origin: '*' }));
 app.use(express.json());
+
+// --- Socket.IO Signaling Engine (merged from signaling-server) ---
+const io = new Server(httpServer, {
+    cors: { origin: '*', methods: ['GET', 'POST'] },
+    transports: ['websocket', 'polling']
+});
+
+const roomData = {};
+
+// Health check for load balancers
+app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'UP', timestamp: new Date().toISOString() });
+});
+
+io.on('connection', (socket) => {
+    console.log(`[CONN] Node attached: ${socket.id}`);
+
+    socket.on('create-room', (payload) => {
+        const pin = typeof payload === 'string' ? payload : payload.pin;
+        const password = payload.password || null;
+        const isMultiPeer = payload.isMultiPeer || false;
+
+        socket.join(pin);
+        roomData[pin] = { ownerId: socket.id, password, isMultiPeer };
+        console.log(`[ROOM] Created: ${pin} (MultiPeer: ${isMultiPeer}, Password: ${!!password})`);
+    });
+
+    socket.on('join-room', (payload) => {
+        const pin = typeof payload === 'string' ? payload : payload.pin;
+        const password = payload.password || null;
+
+        const room = io.sockets.adapter.rooms.get(pin);
+        const rData = roomData[pin];
+
+        if (!room || !rData) {
+            return socket.emit('room-error', { message: 'Room not found.' });
+        }
+        if (rData.password && rData.password !== password) {
+            return socket.emit('room-error', { message: 'Invalid Room Password.' });
+        }
+        if (!rData.isMultiPeer && room.size >= 2) {
+            return socket.emit('room-error', { message: 'Room already full.' });
+        }
+
+        socket.join(pin);
+        console.log(`[ROOM] Node ${socket.id} joined: ${pin}`);
+        io.to(rData.ownerId).emit('peer-joined', { receiverId: socket.id });
+    });
+
+    socket.on('signal', ({ pin, targetId, signalData }) => {
+        const rData = roomData[pin];
+        if (!rData) return;
+        if (targetId) {
+            io.to(targetId).emit('signal', { senderId: socket.id, signalData });
+        } else {
+            socket.to(pin).emit('signal', { senderId: socket.id, signalData });
+        }
+    });
+
+    socket.on('disconnect', () => {
+        console.log(`[DISC] Node detached: ${socket.id}`);
+    });
+});
 
 // Removed hardcoded DEMO_USER_ID
 
@@ -330,6 +396,6 @@ app.get('/api/admin/metrics', async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`🚀 Zepglide Backend with Supabase listening at http://localhost:${port}`);
+httpServer.listen(port, () => {
+  console.log(`🚀 Zepglide Backend + Signaling Engine listening at http://localhost:${port}`);
 });
