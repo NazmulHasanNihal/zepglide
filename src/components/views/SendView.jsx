@@ -14,7 +14,7 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
   const [isMultiPeer, setIsMultiPeer] = useState(false);
   const [sessionStarted, setSessionStarted] = useState(false);
 
-  const { status, progress, speed, eta, startSession, sendFiles, cancelTransfer, retryTransfer } = useWebRTC();
+  const { status, progress, speed, eta, startSession, sendFiles, cancelTransfer, retryTransfer, isSocketConnected } = useWebRTC();
   const fileInputRef = React.useRef(null);
   const [cancelStep, setCancelStep] = useState(0);
 
@@ -277,10 +277,11 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
 
           {/* Ready to Send button */}
           <button 
+            disabled={!isSocketConnected}
             onClick={handleReadyToSend}
-            className="w-full bg-[var(--text-main)] text-[var(--bg-main)] hover:scale-[1.02] active:scale-95 font-black py-5 rounded-2xl transition-all duration-300 shadow-2xl flex items-center justify-center gap-3 uppercase tracking-widest text-xs"
+            className={`w-full hover:scale-[1.02] active:scale-95 font-black py-5 rounded-2xl transition-all duration-300 shadow-2xl flex items-center justify-center gap-3 uppercase tracking-widest text-xs ${!isSocketConnected ? 'bg-[var(--bg-main)] text-[var(--text-muted)] border border-[var(--border-main)] cursor-not-allowed opacity-70' : 'bg-[var(--text-main)] text-[var(--bg-main)]'}`}
           >
-            <Zap size={20} className="fill-current shrink-0" /> Ready to Send
+            {isSocketConnected ? <><Zap size={20} className="fill-current shrink-0" /> Ready to Send</> : <><RefreshCw size={20} className="animate-spin" /> Connecting to Relay Server...</>}
           </button>
         </div>
       ) : (

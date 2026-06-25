@@ -5,7 +5,7 @@ import { useWebRTC } from '../../hooks/useWebRTC';
 export default function ReceiveView({ showToast, playSfx }) {
   const [pin, setPin] = useState('');
   const [password, setPassword] = useState('');
-  const { status, progress, speed, eta, metadata, receivedFile, errorMsg, joinSession, cancelTransfer, retryTransfer } = useWebRTC();
+  const { status, progress, speed, eta, metadata, receivedFile, errorMsg, joinSession, cancelTransfer, retryTransfer, isSocketConnected } = useWebRTC();
   
   const facts = ["Bypassing Symmetric NAT...", "Establishing Quantum-Safe Keys...", "Securing P2P WebRTC Layer...", "Discovering Mesh Route..."];
   const [factIndex, setFactIndex] = useState(0);
@@ -21,9 +21,6 @@ export default function ReceiveView({ showToast, playSfx }) {
     const pinParam = params.get('pin');
     if (pinParam && pinParam.length === 6 && status === 'idle') {
       setPin(pinParam);
-      // Wait for user to input password if needed, or try without password first
-      // Actually, if it has a password, we shouldn't auto join. We let them see the PIN is filled and type password.
-      // For now, let's just try auto-joining without password if there's no password in URL
     }
   }, [joinSession, status]);
 
@@ -59,7 +56,6 @@ export default function ReceiveView({ showToast, playSfx }) {
     const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
     if (pastedData.length > 0) {
       setPin(pastedData.padEnd(6, ''));
-      // Auto-focus the next empty input or the last one
       const focusIndex = Math.min(pastedData.length, 5);
       const nextInput = document.querySelector(`input[data-index="${focusIndex}"]`);
       if (nextInput) nextInput.focus();
@@ -135,13 +131,14 @@ export default function ReceiveView({ showToast, playSfx }) {
                     </p>
                     
                     <button 
+                      disabled={!isSocketConnected}
                       onClick={() => {
                           retryTransfer();
                           if (pin.length === 6) joinSession(pin, password);
                       }}
-                      className="w-full bg-[var(--danger)] text-white hover:brightness-110 px-8 py-4 mb-4 rounded-xl font-black text-xs uppercase tracking-widest transition-all duration-300 shadow-xl active:scale-95 flex items-center justify-center gap-2"
+                      className={`w-full hover:brightness-110 px-8 py-4 mb-4 rounded-xl font-black text-xs uppercase tracking-widest transition-all duration-300 shadow-xl active:scale-95 flex items-center justify-center gap-2 ${!isSocketConnected ? 'bg-[var(--bg-main)] text-[var(--text-muted)] border border-[var(--border-main)] cursor-not-allowed opacity-70' : 'bg-[var(--danger)] text-white'}`}
                     >
-                      <RefreshCw size={16} /> Re-Join Connection
+                      {isSocketConnected ? <><RefreshCw size={16} /> Re-Join Connection</> : <><RefreshCw size={16} className="animate-spin" /> Reconnecting...</>}
                     </button>
                     <button 
                       onClick={() => { setPin(''); cancelTransfer(); }}
@@ -282,10 +279,11 @@ export default function ReceiveView({ showToast, playSfx }) {
               </div>
 
               <button 
+                disabled={!isSocketConnected}
                 onClick={handleJoin} 
-                className="w-full bg-[var(--text-main)] text-[var(--bg-main)] hover:scale-[1.02] active:scale-95 font-black py-4 rounded-2xl transition-all duration-300 uppercase tracking-widest text-xs shadow-xl"
+                className={`w-full hover:scale-[1.02] active:scale-95 font-black py-4 rounded-2xl transition-all duration-300 uppercase tracking-widest text-xs shadow-xl ${!isSocketConnected ? 'bg-[var(--bg-main)] text-[var(--text-muted)] border border-[var(--border-main)] cursor-not-allowed opacity-70' : 'bg-[var(--text-main)] text-[var(--bg-main)]'}`}
               >
-                Join Sync
+                {isSocketConnected ? 'Join Sync' : 'Connecting to Relay...'}
               </button>
            </div>
         )}

@@ -11,6 +11,7 @@ export function useWebRTC() {
     const [eta, setEta] = useState(0);
     const [metadata, setMetadata] = useState(null);
     const [errorMsg, setErrorMsg] = useState('');
+    const [isSocketConnected, setIsSocketConnected] = useState(false);
 
     // Use refs for mutable state that needs to be current inside callbacks
     const socketRef = useRef(null);
@@ -177,10 +178,16 @@ export function useWebRTC() {
 
         newSocket.on('connect', () => {
             console.log('[Signal] Connected to signaling server:', newSocket.id);
+            setIsSocketConnected(true);
+        });
+
+        newSocket.on('disconnect', () => {
+            setIsSocketConnected(false);
         });
 
         newSocket.on('connect_error', (err) => {
             console.error('[Signal] Connection error:', err.message);
+            setIsSocketConnected(false);
         });
 
         newSocket.on('room-error', (data) => {
@@ -389,7 +396,7 @@ export function useWebRTC() {
     }, [doCancel]);
 
     return {
-        status, progress, speed, eta, metadata, receivedFile, errorMsg,
+        status, progress, speed, eta, metadata, receivedFile, errorMsg, isSocketConnected,
         startSession, joinSession, sendFiles, cancelTransfer, retryTransfer
     };
 }
