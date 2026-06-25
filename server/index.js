@@ -151,16 +151,8 @@ app.get('/api/history', async (req, res) => {
     ...h,
     to: h.recipient
   })) || [];
-  
-  // INJECT SIMULATION DATA
-  const dummyHistory = [
-    { id: 'sim-1', name: 'Zepglide_Engine_v4.tar.gz', size: '4.2 GB', to: 'Node Alpha (EU-Central)', status: 'Complete', created_at: new Date().toISOString() },
-    { id: 'sim-2', name: 'Neural_Network_Weights.pt', size: '12.8 GB', to: 'Node Gamma (AS-East)', status: 'Complete', created_at: new Date(Date.now() - 3600000).toISOString() },
-    { id: 'sim-3', name: '4K_Render_Sequence.mp4', size: '1.1 GB', to: 'Node Sigma (US-West)', status: 'Complete', created_at: new Date(Date.now() - 86400000).toISOString() },
-    { id: 'sim-4', name: 'Database_Dump_2026.sql', size: '840 MB', to: 'Node Zeta (SA-East)', status: 'Failed (Relay)', created_at: new Date(Date.now() - 172800000).toISOString() }
-  ];
 
-  res.json([...history, ...dummyHistory]);
+  res.json(history);
 });
 
 app.post('/api/transfers', async (req, res) => {
@@ -192,10 +184,10 @@ app.get('/api/profile/stats', async (req, res) => {
 
     if (error) throw error;
 
-    const totalHandshakes = (transfers?.length || 0) + 1420; // Simulated massive history
+    const totalHandshakes = transfers?.length || 0;
     
     // Parse sizes like "2.4 GB", "150 MB", "Batch Size"
-    let totalSentBytes = 184.5; // Start with 184.5 GB simulated
+    let totalSentBytes = 0;
     transfers?.forEach(t => {
       const sizeStr = t.size || '';
       const match = sizeStr.match(/([\d.]+)\s*(GB|MB|KB|TB)/i);
@@ -210,23 +202,22 @@ app.get('/api/profile/stats', async (req, res) => {
     });
 
     // Calculate trust based on real factors
-    let trustScore = 98; // Simulated high trust node
+    let trustScore = Math.min(100, 50 + (totalHandshakes * 2));
 
     // Recent 4 activities
-    const recentTransfers = [
-      { action: 'Mirror Handshake', target: '4.2 GB', time: '2m ago' },
-      { action: 'Relay Sync', target: '1.1 GB', time: '14m ago' },
-      { action: 'Node Discovery', target: 'Handshake', time: '1h ago' },
-      { action: 'Mirror Handshake', target: '12.8 GB', time: '3h ago' }
-    ];
+    const recentTransfers = (transfers || []).slice(0, 4).map(t => ({
+      action: t.status === 'Complete' ? 'Transfer Complete' : 'Transfer',
+      target: t.size,
+      time: getTimeAgo(new Date(t.created_at))
+    }));
 
     res.json({
       totalHandshakes,
       totalSent: totalSentBytes >= 1 ? `${totalSentBytes.toFixed(1)} GB` : `${(totalSentBytes * 1024).toFixed(0)} MB`,
-      totalReceived: '1.2 TB', // Simulated
+      totalReceived: '0 MB',
       trustScore,
-      storageUsed: (totalSentBytes % 50).toFixed(1), // Simulated storage usage
-      storageLimit: 500, // Upgraded simulated limit
+      storageUsed: totalSentBytes.toFixed(1),
+      storageLimit: 50,
       recentActivity: recentTransfers
     });
   } catch (err) {
@@ -250,14 +241,17 @@ app.get('/api/admin/users', async (req, res) => {
   // Only admin can access
   if (user.email !== 'nazmulhas36@gmail.com') return res.status(403).json({ error: 'Forbidden' });
 
-  const users = [
-    { id: '1a2b3c4d', email: 'alpha.node@mesh.net', plan: 'Enterprise', bw: '14,204 transfers', status: 'Active', region: 'US' },
-    { id: '2b3c4d5e', email: 'beta.relay@zepglide.io', plan: 'Pro', bw: '8,192 transfers', status: 'Active', region: 'DE' },
-    { id: '3c4d5e6f', email: 'gamma.edge@global.org', plan: 'Teams', bw: '3,410 transfers', status: 'Active', region: 'JP' },
-    { id: '4d5e6f7a', email: 'delta.sync@cloud.co', plan: 'Pro', bw: '1,024 transfers', status: 'Offline', region: 'BR' },
-    { id: '5e6f7a8b', email: 'epsilon.core@net.io', plan: 'Enterprise', bw: '54,200 transfers', status: 'Active', region: 'UK' },
-    { id: '6f7a8b9c', email: 'zeta.cache@edge.dev', plan: 'Free', bw: '42 transfers', status: 'Active', region: 'BD' }
-  ];
+  const { data: profiles, error } = await supabase.from('profiles').select('*');
+  if (error) return res.status(500).json({ error: error.message });
+
+  const users = profiles.map(p => ({
+    id: p.id,
+    email: p.email || 'Unknown',
+    plan: 'Standard',
+    bw: 'Unknown',
+    status: 'Active',
+    region: p.country_code || 'US'
+  }));
 
   res.json(users);
 });
@@ -268,13 +262,17 @@ app.get('/api/admin/transfers', async (req, res) => {
 
   if (user.email !== 'nazmulhas36@gmail.com') return res.status(403).json({ error: 'Forbidden' });
 
-  const transfers = [
-    { id: 'tx_a1b2', file: 'production_database_backup_final.sql', size: '14.2 GB', type: 'P2P (WebRTC)', status: 'Complete', speed: '142 MB/s' },
-    { id: 'tx_c3d4', file: 'client_brand_assets_2026.zip', size: '2.1 GB', type: 'TURN Relay', status: 'Active', speed: '45 MB/s' },
-    { id: 'tx_e5f6', file: 'neural_weights_v4.pt', size: '42.8 GB', type: 'P2P (WebRTC)', status: 'Active', speed: '210 MB/s' },
-    { id: 'tx_g7h8', file: '4k_drone_footage.mp4', size: '8.4 GB', type: 'P2P (WebTransport)', status: 'Complete', speed: '340 MB/s' },
-    { id: 'tx_i9j0', file: 'system_logs_archive.tar.gz', size: '450 MB', type: 'P2P (WebRTC)', status: 'Failed', speed: '--' }
-  ];
+  const { data: dbTransfers, error } = await supabase.from('transfers').select('*').order('created_at', { ascending: false }).limit(50);
+  if (error) return res.status(500).json({ error: error.message });
+
+  const transfers = dbTransfers.map(t => ({
+    id: t.id,
+    file: t.name || 'Unknown',
+    size: t.size || '0 MB',
+    type: 'P2P (WebRTC)',
+    status: t.status || 'Complete',
+    speed: '-- MB/s'
+  }));
 
   res.json(transfers);
 });
@@ -285,40 +283,30 @@ app.get('/api/devices', async (req, res) => {
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
   const devices = [
-     { id: user.id, name: 'Current Workstation', type: 'Desktop', os: 'Encrypted OS', status: 'Online', lastSeen: 'Now', location: 'Global Mesh', ip: 'Masked', isCurrent: true },
-     { id: 'sim-dev-1', name: 'Zepglide Mobile App', type: 'Mobile', os: 'iOS 18', status: 'Online', lastSeen: '2m ago', location: 'London, UK', ip: 'Masked', isCurrent: false },
-     { id: 'sim-dev-2', name: 'Studio Mac Studio', type: 'Desktop', os: 'macOS 15', status: 'Offline', lastSeen: '4h ago', location: 'Tokyo, JP', ip: 'Masked', isCurrent: false },
-     { id: 'sim-dev-3', name: 'Backup NAS Node', type: 'Desktop', os: 'Linux', status: 'Online', lastSeen: 'Now', location: 'Frankfurt, DE', ip: 'Masked', isCurrent: false }
+     { id: user.id, name: 'Current Workstation', type: 'Desktop', os: 'Web Browser', status: 'Online', lastSeen: 'Now', location: 'Current', ip: 'Masked', isCurrent: true }
   ];
 
   res.json(devices);
 });
 
 app.get('/api/map', async (req, res) => {
-  // Simulated high global density
-  const aggregated = {
-    'United States of America (USA)': 14205,
-    'Germany': 8430,
-    'United Kingdom (UK)': 6200,
-    'Japan': 5100,
-    'Brazil': 3240,
-    'Australia': 2100,
-    'India': 4500,
-    'France': 3100,
-    'Canada': 2800,
-    'South Africa': 900
-  };
+  const { data: profiles, error } = await supabase.from('profiles').select('country_code');
+  if (error) return res.json({});
+
+  const aggregated = {};
+  profiles.forEach(p => {
+    const cc = p.country_code || 'Unknown';
+    aggregated[cc] = (aggregated[cc] || 0) + 1;
+  });
+  
   res.json(aggregated);
 });
 
 app.get('/api/telemetry', async (req, res) => {
-  const events = [
-     { id: 1, type: 'Sync', msg: 'Transfer 4K_Render - 12.4 GB', time: new Date().toLocaleTimeString() },
-     { id: 2, type: 'Handshake', msg: 'Node Alpha connected to Node Zeta', time: new Date(Date.now() - 2000).toLocaleTimeString() },
-     { id: 3, type: 'Relay', msg: 'TURN Server failover triggered (DE)', time: new Date(Date.now() - 5000).toLocaleTimeString() },
-     { id: 4, type: 'Sync', msg: 'Database_Backup_2026 - 4.1 GB', time: new Date(Date.now() - 14000).toLocaleTimeString() },
-     { id: 5, type: 'Discovery', msg: 'New P2P Mesh established in US-West', time: new Date(Date.now() - 22000).toLocaleTimeString() }
-  ];
+  const { data: transfers } = await supabase.from('transfers').select('id, name, size, status, created_at').order('created_at', { ascending: false }).limit(5);
+  const events = (transfers || []).map(t => ({
+     id: t.id, type: 'Transfer', msg: `${t.status}: ${t.name} - ${t.size}`, time: new Date(t.created_at).toLocaleTimeString()
+  }));
   res.json(events);
 });
 
@@ -328,10 +316,13 @@ app.get('/api/admin/metrics', async (req, res) => {
     const user = await getAuthUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
+    const { count: userCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
+    const { count: transferCount } = await supabase.from('transfers').select('*', { count: 'exact', head: true });
+
     res.json({
-      activeTransfers: 142054,
-      nodesOnline: 2840000,
-      trafficRate: '5.4 TB/s',
+      activeTransfers: transferCount || 0,
+      nodesOnline: userCount || 0,
+      trafficRate: '--',
       health: 'Optimal'
     });
   } catch (err) {
