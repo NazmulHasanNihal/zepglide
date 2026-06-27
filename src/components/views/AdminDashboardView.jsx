@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  ShieldAlert, RefreshCw, Megaphone, Send, CheckCircle2, Sliders, HardDrive, Activity, 
-  Database, Clock, Settings, Pause, UserPlus, ShieldCheck, Server, Network, DatabaseZap, Skull,
-  PieChart, Users, UserX, MoreVertical, FileWarning, Brain, Microscope, ShieldHalf, Fingerprint, AlertOctagon, Zap, AlertTriangle, X,
-  Crown, Trophy, Key, Radar, Menu, Sun, Moon, ChevronDown, User, UserCircle, LogOut, Command, Search, Info, MonitorDown, Globe
+  RefreshCw, Megaphone, Send, CheckCircle2, Sliders, HardDrive, Activity, 
+  Database, Clock, Settings, Pause, UserPlus, ShieldCheck, FileWarning, Brain, Microscope, ShieldHalf, Fingerprint, Zap, X,
+  Radar, PieChart, MonitorDown, Globe
 } from 'lucide-react';
 import { useSound } from '../../hooks/useSound';
 import { supabase } from '../../lib/supabase';
@@ -22,6 +21,7 @@ export default function AdminDashboardView({ showToast }) {
   const [broadcastMsg, setBroadcastMsg] = useState('');
   const [broadcastStatus, setBroadcastStatus] = useState('idle');
   const [heatmap, setHeatmap] = useState(Array(24).fill(0));
+  const { playSfx } = useSound();
 
   // Compute real heatmap from recent transfers
   useEffect(() => {
@@ -112,7 +112,7 @@ export default function AdminDashboardView({ showToast }) {
     fetchAdminData();
   }, []);
 
-  const [staffSessions, setStaffSessions] = useState([]);
+
 
   const handleConfigUpdate = async (updates) => {
     const newConfig = { ...config, ...updates };
@@ -127,12 +127,6 @@ export default function AdminDashboardView({ showToast }) {
     } catch (e) {
         console.error(e);
     }
-  };
-
-  const handleRevokeSession = (id) => {
-    setStaffSessions(prev => prev.filter(s => s.id !== id));
-    playSfx('warning');
-    showToast(`Session ${id} severed. User logged out.`, "primary");
   };
 
   const toggleRegionBlock = (region) => {
@@ -399,7 +393,57 @@ export default function AdminDashboardView({ showToast }) {
         </div>
       </div>
 
-      {/* 9. Financial Engine */}
+      {/* 9. Analytics Engine */}
+      <div className="bg-[var(--bg-surface)] border border-[var(--border-main)] rounded-[3rem] p-10 md:p-14 shadow-2xl relative overflow-hidden text-[var(--text-main)]">
+         <h3 className="text-3xl font-black text-[var(--text-main)] flex items-center gap-4 tracking-tighter uppercase mb-12"><MonitorDown className="text-[var(--primary)] shrink-0" size={36} />Analytics Engine</h3>
+         
+         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-4">
+            <div className="md:col-span-2 bg-[var(--bg-main)] rounded-3xl border border-[var(--border-main)] p-8 shadow-inner flex flex-col justify-between">
+               <div className="flex justify-between items-center mb-6">
+                 <div>
+                   <h4 className="text-sm font-black uppercase tracking-widest text-[var(--text-muted)]">P2P Network Bandwidth</h4>
+                   <p className="text-3xl font-black tracking-tighter text-[var(--primary)] mt-1">{((metrics.nodesOnline || 1) * 2.4).toFixed(1)} TB <span className="text-sm text-[var(--text-muted)]">/ mo</span></p>
+                 </div>
+                 <div className="px-4 py-2 bg-[var(--success-10)] text-[var(--success)] text-[10px] font-black uppercase tracking-widest rounded-xl border border-[var(--success-20)]">
+                   +14.2% Growth
+                 </div>
+               </div>
+               
+               {/* SVG Graph Simulation */}
+               <div className="relative h-32 w-full mt-auto flex items-end justify-between gap-1.5 md:gap-2">
+                 {[40, 55, 30, 80, 45, 60, 95, 70, 85, 50, 75, 100].map((h, i) => (
+                   <div key={i} className="w-full bg-[var(--primary-20)] rounded-t-md hover:bg-[var(--primary)] transition-all relative group cursor-crosshair" style={{height: `${h}%`}}>
+                     <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-[var(--bg-surface)] text-[10px] font-bold px-2 py-1 rounded shadow-lg border border-[var(--border-main)] opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
+                       {h * 12} GB
+                     </div>
+                   </div>
+                 ))}
+               </div>
+            </div>
+
+            <div className="flex flex-col gap-6">
+               <div className="bg-[var(--bg-main)] p-6 rounded-3xl border border-[var(--border-main)] shadow-inner flex-1 flex flex-col justify-center">
+                 <h4 className="text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">Relay Fallback Rate</h4>
+                 <div className="flex items-end gap-3 mb-3">
+                   <span className="text-4xl font-black tracking-tighter text-[var(--warning)]">4.2%</span>
+                 </div>
+                 <div className="w-full bg-[var(--bg-surface)] h-2 rounded-full overflow-hidden">
+                   <div className="bg-[var(--warning)] h-full rounded-full" style={{width: '4.2%'}}></div>
+                 </div>
+               </div>
+
+               <div className="bg-[var(--bg-main)] p-6 rounded-3xl border border-[var(--border-main)] shadow-inner flex-1 flex flex-col justify-center">
+                 <h4 className="text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">Server Costs Saved</h4>
+                 <div className="flex items-end gap-3 mb-2">
+                   <span className="text-4xl font-black tracking-tighter text-[var(--success)]">${((transfers.length || 1) * 342).toLocaleString()}</span>
+                 </div>
+                 <p className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Est. this month</p>
+               </div>
+            </div>
+         </div>
+      </div>
+
+      {/* 10. Financial Engine */}
       <div className="bg-[var(--bg-surface)] border border-[var(--border-main)] rounded-[3rem] p-10 md:p-14 shadow-2xl text-[var(--text-main)]">
          <h3 className="text-3xl font-black text-[var(--text-main)] flex items-center gap-4 tracking-tighter uppercase mb-12"><PieChart className="text-[var(--success)] shrink-0" size={36} />Financial Engine</h3>
          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 mb-12">

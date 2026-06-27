@@ -3,7 +3,7 @@ import { Download, Radar, CheckCircle2, FileText, Smartphone, Gauge, Activity, C
 import { useWebRTC } from '../../hooks/useWebRTC';
 import { Scanner } from '@yudiel/react-qr-scanner';
 
-export default function ReceiveView({ showToast, playSfx }) {
+export default function ReceiveView({ showToast }) {
   const [pin, setPin] = useState('');
   const [password, setPassword] = useState('');
   const [isScanning, setIsScanning] = useState(false);

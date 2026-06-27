@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { io } from 'socket.io-client';
 
 // --- High-Performance Transfer Constants ---
-const SEND_CHUNK_SIZE = 16384;            // 16KB - MUST stay at 16KB for WebRTC maxMessageSize limits!
+const SEND_CHUNK_SIZE = 65536;            // 64KB - max safe chunk for cross-browser WebRTC (Chrome/Firefox/Safari all support 256KB+)
 const HIGH_WATER_MARK = 16 * 1024 * 1024; // 16MB - larger buffer for faster networks without overwhelming memory
 const LOW_WATER_MARK = 4 * 1024 * 1024;   // 4MB - threshold to resume sending
 const UI_THROTTLE_MS = 100;               // Update progress bar max 10x/sec
@@ -68,7 +68,7 @@ export function useWebRTC() {
                     progress: totalSizeRef.current > 0 ? (transferredBytesRef.current / totalSizeRef.current) * 100 : 0
                 });
             }
-        }, 200);
+        }, 500);
         return () => clearInterval(interval);
     }, [status]);
 
@@ -151,7 +151,9 @@ export function useWebRTC() {
         const pc = new RTCPeerConnection({
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' }
             ]
         });
 
@@ -177,7 +179,7 @@ export function useWebRTC() {
         };
 
         if (isInitiator) {
-            const dc = pc.createDataChannel('zepglide-transfer');
+            const dc = pc.createDataChannel('zepglide-transfer', { ordered: true, maxRetransmits: 30 });
             setupDataChannel(dc, targetId);
         } else {
             pc.ondatachannel = (event) => {
