@@ -16,7 +16,6 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
 
   const { status, progress, speed, eta, startSession, sendFiles, cancelTransfer, pauseTransfer, resumeTransfer, retryTransfer, isSocketConnected, fingerprint } = useWebRTC();
   const fileInputRef = React.useRef(null);
-  const folderInputRef = React.useRef(null);
   const [cancelStep, setCancelStep] = useState(0);
 
   const isPro = profile?.plan === 'Pro' || profile?.plan === 'Teams';
@@ -33,50 +32,12 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
     fileInputRef.current?.click();
   };
 
-  const handleFolderClick = () => {
-    folderInputRef.current?.click();
-  };
-
-  const [isZipping, setIsZipping] = useState(false);
-
   const handleFileInputChange = async (e) => {
     if (e.target.files && e.target.files.length > 0) {
       const files = Array.from(e.target.files);
-      
-      const isFolder = files.some(f => f.webkitRelativePath && f.webkitRelativePath.includes('/'));
-      
-      if (isFolder) {
-         setIsZipping(true);
-         showToast("Compressing folder... Please wait.", "info");
-         try {
-             const JSZip = (await import('jszip')).default;
-             const zip = new JSZip();
-             
-             const rootName = files[0].webkitRelativePath.split('/')[0] || 'folder';
-             
-             files.forEach(f => {
-                 // Remove the root folder name from the path so the zip extracts nicely, or keep it.
-                 // Keeping it is fine.
-                 zip.file(f.webkitRelativePath, f);
-             });
-             
-             const zipBlob = await zip.generateAsync({ type: 'blob' });
-             const zipFile = new File([zipBlob], `${rootName}.zip`, { type: 'application/zip' });
-             
-             addFiles([zipFile]);
-             showToast(`Folder compressed into ${rootName}.zip`, "success");
-         } catch (err) {
-             console.error("Zip error:", err);
-             showToast("Failed to compress folder", "error");
-         } finally {
-             setIsZipping(false);
-         }
-      } else {
-         addFiles(files);
-      }
+      addFiles(files);
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
-    if (folderInputRef.current) folderInputRef.current.value = '';
   };
 
   // APPEND files instead of replacing
@@ -146,6 +107,13 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
       startSession(newPin, password, isMultiPeer);
     }, 1500);
   };
+
+  // Auto-start transfer when connected
+  useEffect(() => {
+    if (status === 'connected' && sessionStarted && rawFiles.length > 0) {
+      sendFiles(rawFiles);
+    }
+  }, [status, sessionStarted, rawFiles, sendFiles]);
 
   const handleStartTransfer = () => {
     if (status === 'connected') {
@@ -236,28 +204,15 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
             className="hidden" 
             multiple
           />
-          <input 
-            type="file" 
-            ref={folderInputRef} 
-            onChange={handleFileInputChange} 
-            className="hidden" 
-            webkitdirectory="true"
-            directory="true"
-            multiple
-          />
-          
           <div className={`h-24 w-24 rounded-[2rem] flex items-center justify-center mb-8 shrink-0 transition-all duration-500 shadow-sm ${dragActive ? 'bg-[var(--primary)] text-[var(--primary-content)] scale-110 shadow-xl' : 'bg-[var(--primary-10)] text-[var(--primary)]'}`}>
-            {isZipping ? <RefreshCw size={48} className="animate-spin" /> : <UploadCloud size={48} className={dragActive ? 'animate-bounce' : ''} />}
+            <UploadCloud size={48} className={dragActive ? 'animate-bounce' : ''} />
           </div>
-          <h3 className="text-2xl md:text-3xl font-black text-[var(--text-main)] mb-3 tracking-tighter uppercase">{isZipping ? 'Zipping Folder...' : 'Drop Files or Click to Browse'}</h3>
-          <p className="text-xs font-black text-[var(--text-muted)] uppercase tracking-widest mb-10">{isZipping ? 'Please wait while we compress it' : 'P2P Encryption Active • Select Multiple Files'}</p>
+          <h3 className="text-2xl md:text-3xl font-black text-[var(--text-main)] mb-3 tracking-tighter uppercase">Drop Files or Click to Browse</h3>
+          <p className="text-xs font-black text-[var(--text-muted)] uppercase tracking-widest mb-10">P2P Encryption Active • Select Multiple Files</p>
           
           <div className="flex flex-wrap justify-center gap-4">
-            <button disabled={isZipping} className="bg-[var(--text-main)] text-[var(--bg-main)] hover:scale-105 active:scale-95 px-8 py-4 rounded-2xl font-black text-xs tracking-widest uppercase transition-all duration-300 shadow-xl flex items-center gap-2 disabled:opacity-50" onClick={(e) => { e.stopPropagation(); handleBrowseClick(); }}>
+            <button className="bg-[var(--text-main)] text-[var(--bg-main)] hover:scale-105 active:scale-95 px-8 py-4 rounded-2xl font-black text-xs tracking-widest uppercase transition-all duration-300 shadow-xl flex items-center gap-2 disabled:opacity-50" onClick={(e) => { e.stopPropagation(); handleBrowseClick(); }}>
               <Download size={16} className="rotate-180" /> Select Files
-            </button>
-            <button disabled={isZipping} className="bg-[var(--primary-10)] text-[var(--primary)] hover:bg-[var(--primary)] hover:text-white hover:scale-105 active:scale-95 px-8 py-4 rounded-2xl font-black text-xs tracking-widest uppercase transition-all duration-300 shadow-xl flex items-center gap-2 disabled:opacity-50" onClick={(e) => { e.stopPropagation(); handleFolderClick(); }}>
-              <Download size={16} className="rotate-180" /> Select Folder
             </button>
           </div>
         </div>
@@ -452,7 +407,7 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
                 } disabled:opacity-50 active:scale-95`}
               >
                 {status === 'connecting' ? <RefreshCw size={20} className="animate-spin"/> : <Zap size={20} className="fill-current shrink-0" />}
-                {status === 'connecting' ? 'Waiting for Peer...' : status === 'connected' ? 'Secure Channel Ready - Start Sync' : 'Initialize Hyper-Sync'}
+                {status === 'connecting' ? 'Waiting for Peer...' : status === 'connected' ? 'Secure Channel Ready - Auto Syncing...' : 'Initialize Hyper-Sync'}
               </button>
             </div>
           )}

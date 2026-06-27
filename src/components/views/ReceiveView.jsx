@@ -18,13 +18,27 @@ export default function ReceiveView({ showToast, playSfx }) {
      return () => clearInterval(interval);
   }, [status]);
 
+  // Auto-download when transfer completes
+  useEffect(() => {
+    if (status === 'success' && receivedFile) {
+      const files = Array.isArray(receivedFile) ? receivedFile : [receivedFile];
+      files.forEach(f => {
+          const a = document.createElement('a');
+          a.href = f.url;
+          a.download = f.name;
+          a.click();
+      });
+    }
+  }, [status, receivedFile]);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const pinParam = params.get('pin');
-    if (pinParam && pinParam.length === 6 && status === 'idle') {
+    if (pinParam && pinParam.length === 6 && status === 'idle' && isSocketConnected) {
       setPin(pinParam);
+      joinSession(pinParam, password);
     }
-  }, [joinSession, status]);
+  }, [joinSession, status, isSocketConnected, password]);
 
   useEffect(() => {
     if (errorMsg) {
@@ -269,7 +283,7 @@ export default function ReceiveView({ showToast, playSfx }) {
               <div className="flex justify-center gap-2 mb-6">
                 {[...Array(6)].map((_, i) => (
                   <input 
-                    key={i} data-index={i} type="text" inputMode="numeric" pattern="[0-9]*" maxLength="6" 
+                    key={i} data-index={i} type="tel" inputMode="numeric" pattern="[0-9]*" maxLength="1" 
                     className="w-10 h-14 md:w-12 md:h-16 bg-[var(--bg-main)] border border-[var(--border-main)] rounded-xl text-center text-2xl font-black text-[var(--text-main)] focus:border-[var(--primary)] outline-none transition-all duration-300 shadow-sm focus:ring-2 focus:ring-[var(--primary-20)]" 
                     placeholder="-" 
                     value={pin[i] || ''}
