@@ -34,6 +34,7 @@ export function useWebRTC() {
     const isPausedRef = useRef(false);
     const isCancelledRef = useRef(false);
     const lastProgressTimeRef = useRef(0);
+    const candidateQueueRef = useRef({});
 
     // Keep statusRef in sync
     useEffect(() => { statusRef.current = status; }, [status]);
@@ -261,9 +262,22 @@ export function useWebRTC() {
                     await pc.setRemoteDescription(new RTCSessionDescription(signalData.sdp));
                     const fpMatch = signalData.sdp.sdp?.match(/a=fingerprint:sha-256\s+(.*)/i);
                     if (fpMatch) setFingerprint(fpMatch[1]);
+                    
+                    // Process any queued candidates now that remote description is set
+                    if (candidateQueueRef.current[senderId]) {
+                        for (const candidate of candidateQueueRef.current[senderId]) {
+                            await pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.warn(e));
+                        }
+                        candidateQueueRef.current[senderId] = [];
+                    }
                 }
                 if (signalData.candidate) {
-                    await pc.addIceCandidate(new RTCIceCandidate(signalData.candidate));
+                    if (pc.remoteDescription && pc.remoteDescription.type) {
+                        await pc.addIceCandidate(new RTCIceCandidate(signalData.candidate));
+                    } else {
+                        if (!candidateQueueRef.current[senderId]) candidateQueueRef.current[senderId] = [];
+                        candidateQueueRef.current[senderId].push(signalData.candidate);
+                    }
                 }
             } catch (err) {
                 console.error('[WebRTC] Signal handling error:', err);
@@ -445,9 +459,22 @@ export function useWebRTC() {
                         await pc.setLocalDescription(answer);
                         socket.emit('signal', { pin, targetId: senderId, signalData: { sdp: pc.localDescription } });
                     }
+                    
+                    // Process queued candidates
+                    if (candidateQueueRef.current[senderId]) {
+                        for (const candidate of candidateQueueRef.current[senderId]) {
+                            await pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.warn(e));
+                        }
+                        candidateQueueRef.current[senderId] = [];
+                    }
                 }
                 if (signalData.candidate) {
-                    await pc.addIceCandidate(new RTCIceCandidate(signalData.candidate));
+                    if (pc.remoteDescription && pc.remoteDescription.type) {
+                        await pc.addIceCandidate(new RTCIceCandidate(signalData.candidate));
+                    } else {
+                        if (!candidateQueueRef.current[senderId]) candidateQueueRef.current[senderId] = [];
+                        candidateQueueRef.current[senderId].push(signalData.candidate);
+                    }
                 }
             } catch (err) {
                 console.error('[WebRTC] Signal handling error:', err);

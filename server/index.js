@@ -422,8 +422,9 @@ app.get('/api/admin/users', async (req, res) => {
   const user = await getAuthUser(req);
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
-  // Only admin can access
-  if (user.email !== 'nazmulhas36@gmail.com') return res.status(403).json({ error: 'Forbidden' });
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+  const isAdmin = profile?.role === 'admin' || user.email === 'nazmulhas36@gmail.com' || user.email === process.env.ADMIN_EMAIL;
+  if (!isAdmin) return res.status(403).json({ error: 'Forbidden' });
 
   const { data: profiles, error } = await supabase.from('profiles').select('*');
   if (error) return res.status(500).json({ error: error.message });
@@ -442,7 +443,10 @@ app.get('/api/admin/users', async (req, res) => {
 
 app.post('/api/admin/users/:id/status', async (req, res) => {
   const user = await getAuthUser(req);
-  if (!user || user.email !== 'nazmulhas36@gmail.com') return res.status(403).json({ error: 'Forbidden' });
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+  const isAdmin = profile?.role === 'admin' || user.email === 'nazmulhas36@gmail.com' || user.email === process.env.ADMIN_EMAIL;
+  if (!isAdmin) return res.status(403).json({ error: 'Forbidden' });
 
   const { id } = req.params;
   const { status } = req.body;
@@ -456,8 +460,9 @@ app.post('/api/admin/users/:id/status', async (req, res) => {
 app.get('/api/admin/transfers', async (req, res) => {
   const user = await getAuthUser(req);
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
-
-  if (user.email !== 'nazmulhas36@gmail.com') return res.status(403).json({ error: 'Forbidden' });
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+  const isAdmin = profile?.role === 'admin' || user.email === 'nazmulhas36@gmail.com' || user.email === process.env.ADMIN_EMAIL;
+  if (!isAdmin) return res.status(403).json({ error: 'Forbidden' });
 
   const { data: dbTransfers, error } = await supabase.from('transfers').select('*').order('created_at', { ascending: false }).limit(50);
   if (error) return res.status(500).json({ error: error.message });
@@ -580,6 +585,9 @@ app.get('/api/admin/metrics', async (req, res) => {
   try {
     const user = await getAuthUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+    const isAdmin = profile?.role === 'admin' || user.email === 'nazmulhas36@gmail.com' || user.email === process.env.ADMIN_EMAIL;
+    if (!isAdmin) return res.status(403).json({ error: 'Forbidden' });
 
     const { count: userCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
     const { count: transferCount } = await supabase.from('transfers').select('*', { count: 'exact', head: true });
@@ -597,7 +605,10 @@ app.get('/api/admin/metrics', async (req, res) => {
 
 app.get('/api/admin/config', async (req, res) => {
   const user = await getAuthUser(req);
-  if (!user || user.email !== 'nazmulhas36@gmail.com') return res.status(403).json({ error: 'Forbidden' });
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+  const isAdmin = profile?.role === 'admin' || user.email === 'nazmulhas36@gmail.com' || user.email === process.env.ADMIN_EMAIL;
+  if (!isAdmin) return res.status(403).json({ error: 'Forbidden' });
 
   const { data, error } = await supabase.from('system_config').select('*').eq('id', 'global').maybeSingle();
   if (error || !data) return res.json({});
@@ -606,7 +617,10 @@ app.get('/api/admin/config', async (req, res) => {
 
 app.put('/api/admin/config', async (req, res) => {
   const user = await getAuthUser(req);
-  if (!user || user.email !== 'nazmulhas36@gmail.com') return res.status(403).json({ error: 'Forbidden' });
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+  const isAdmin = profile?.role === 'admin' || user.email === 'nazmulhas36@gmail.com' || user.email === process.env.ADMIN_EMAIL;
+  if (!isAdmin) return res.status(403).json({ error: 'Forbidden' });
 
   const config = req.body;
   const { error } = await supabase.from('system_config').update(config).eq('id', 'global');
@@ -620,7 +634,10 @@ app.put('/api/admin/config', async (req, res) => {
 
 app.post('/api/admin/broadcast', async (req, res) => {
   const user = await getAuthUser(req);
-  if (!user || user.email !== 'nazmulhas36@gmail.com') return res.status(403).json({ error: 'Forbidden' });
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+  const isAdmin = profile?.role === 'admin' || user.email === 'nazmulhas36@gmail.com' || user.email === process.env.ADMIN_EMAIL;
+  if (!isAdmin) return res.status(403).json({ error: 'Forbidden' });
 
   const { message } = req.body;
   io.emit('global-broadcast', { message, time: new Date().toISOString() });

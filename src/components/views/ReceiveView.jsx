@@ -47,8 +47,9 @@ export default function ReceiveView({ showToast, playSfx }) {
   }, [errorMsg, showToast]);
 
   const handleJoin = () => {
-    if (pin.length === 6) {
-      joinSession(pin, password);
+    const cleanPin = pin.replace(/\s/g, '');
+    if (cleanPin.length === 6) {
+      joinSession(cleanPin, password);
     } else {
       showToast("Please enter a 6-digit PIN", "info");
     }
@@ -56,14 +57,27 @@ export default function ReceiveView({ showToast, playSfx }) {
 
   const handlePinChange = (index, value) => {
     if (!/^\d*$/.test(value)) return;
-    const newPinArr = pin.split('');
-    newPinArr[index] = value.slice(-1);
+    
+    // Create an array of 6 elements, defaulting to empty space
+    const paddedPin = pin.padEnd(6, ' ');
+    const newPinArr = paddedPin.split('');
+    
+    // Set the specific index to the new value (or space if deleted)
+    newPinArr[index] = value.slice(-1) || ' ';
+    
     const newPin = newPinArr.join('');
     setPin(newPin);
     
+    // Auto-focus next input if typing a digit
     if (value && index < 5) {
       const nextInput = document.querySelector(`input[data-index="${index + 1}"]`);
       if (nextInput) nextInput.focus();
+    }
+    
+    // Auto-focus previous input on backspace (if value is empty)
+    if (!value && index > 0) {
+      const prevInput = document.querySelector(`input[data-index="${index - 1}"]`);
+      if (prevInput) prevInput.focus();
     }
   };
 
@@ -287,7 +301,7 @@ export default function ReceiveView({ showToast, playSfx }) {
                     key={i} data-index={i} type="tel" inputMode="numeric" pattern="[0-9]*" maxLength="1" 
                     className="w-10 h-14 md:w-12 md:h-16 bg-[var(--bg-main)] border border-[var(--border-main)] rounded-xl text-center text-2xl font-black text-[var(--text-main)] focus:border-[var(--primary)] outline-none transition-all duration-300 shadow-sm focus:ring-2 focus:ring-[var(--primary-20)]" 
                     placeholder="-" 
-                    value={pin[i] || ''}
+                    value={pin[i] === ' ' ? '' : (pin[i] || '')}
                     onChange={(e) => handlePinChange(i, e.target.value)}
                     onPaste={handlePinPaste}
                   />

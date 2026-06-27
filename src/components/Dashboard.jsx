@@ -37,7 +37,7 @@ const Dashboard = React.memo(({ isAuthenticated, onLoginClick, onLogout, isDarkM
     publicDiscovery: true, autoAccept: false, strictE2EE: true, useWebTransport: true, useWebGPU: true, cloudBridgeFallback: true
   });
 
-  const isAdmin = profile?.email === 'nazmulhas36@gmail.com';
+  const isAdmin = profile?.role === 'admin' || profile?.email === 'nazmulhas36@gmail.com' || profile?.email === import.meta.env.VITE_ADMIN_EMAIL;
 
   const [isLoading, setIsLoading] = useState(true);
 
