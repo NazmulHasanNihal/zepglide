@@ -68,7 +68,7 @@ export function useWebRTC() {
                     progress: totalSizeRef.current > 0 ? (transferredBytesRef.current / totalSizeRef.current) * 100 : 0
                 });
             }
-        }, 500);
+        }, 200);
         return () => clearInterval(interval);
     }, [status]);
 
@@ -423,6 +423,12 @@ export function useWebRTC() {
                 await new Promise(resolve => setTimeout(resolve, 5));
             }
         }
+        
+        // Final telemetry emit to ensure 100% and 0 speed is sent
+        if (socketRef.current && socketRef.current.connected) {
+            socketRef.current.emit('telemetry', { speed: 0, progress: 100 });
+        }
+        
         setStatus('success');
     }, []);
 

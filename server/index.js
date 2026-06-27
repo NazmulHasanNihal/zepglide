@@ -316,9 +316,24 @@ app.get('/api/history', async (req, res) => {
 
 app.post('/api/transfers', async (req, res) => {
   const user = await getAuthUser(req);
-  if (!user) return res.status(401).json({ error: 'Unauthorized' });
-
   const { name, size, to, status } = req.body;
+  
+  // ALWAYS increment global stats (even for anonymous users)
+  totalTransfersCount++;
+  const match = (size || '').match(/([\d.]+)\s*(GB|MB|KB|TB)/i);
+  if (match) {
+      const val = parseFloat(match[1]);
+      const unit = match[2].toUpperCase();
+      if (unit === 'TB') totalDataSynced += val * 1024 * 1024;
+      else if (unit === 'GB') totalDataSynced += val * 1024;
+      else if (unit === 'MB') totalDataSynced += val;
+      else if (unit === 'KB') totalDataSynced += val / 1024;
+  }
+
+  // If unauthenticated, return early with success (don't save to DB)
+  if (!user) {
+    return res.json({ success: true, transfer: { name, size, to: to || 'Unknown', status: status || 'Complete' } });
+  }
   
   const { data, error } = await supabase.from('transfers').insert({
     user_id: user.id,
@@ -327,21 +342,8 @@ app.post('/api/transfers', async (req, res) => {
     recipient: to || 'Unknown',
     status: status || 'Complete'
   }).select().single();
-  
-  if (!error) {
-      totalTransfersCount++;
-      const match = (size || '').match(/([\d.]+)\s*(GB|MB|KB|TB)/i);
-      if (match) {
-          const val = parseFloat(match[1]);
-          const unit = match[2].toUpperCase();
-          if (unit === 'TB') totalDataSynced += val * 1024 * 1024;
-          else if (unit === 'GB') totalDataSynced += val * 1024;
-          else if (unit === 'MB') totalDataSynced += val;
-          else if (unit === 'KB') totalDataSynced += val / 1024;
-      }
-  }
 
-  res.json({ success: true, transfer: { ...data, to: data.recipient } });
+  res.json({ success: true, transfer: { ...data, to: data?.recipient || (to || 'Unknown') } });
 });
 // --- GLOBAL STATS (For Global Hub) ---
 app.get('/api/global-stats', async (req, res) => {

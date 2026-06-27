@@ -262,7 +262,7 @@ const Dashboard = React.memo(({ isAuthenticated, onLoginClick, onLogout, isDarkM
         ) : (
           <div className="max-w-[1440px] mx-auto p-4 md:p-8 flex justify-center pb-24 md:pb-24">
             <div key={activeTab} className="w-full animate-in fade-in slide-in-from-bottom-8 duration-700 ease-[cubic-bezier(0.23,1,0.32,1)] fill-mode-both">
-              {activeTab === 'send' && <SendView profile={profile} isAuthenticated={isAuthenticated} showToast={showToast} globalDroppedFile={globalDroppedFile} setGlobalDroppedFile={setGlobalDroppedFile} />}
+              {activeTab === 'send' && <SendView profile={profile} isAuthenticated={isAuthenticated} showToast={showToast} globalDroppedFile={globalDroppedFile} setGlobalDroppedFile={setGlobalDroppedFile} preferences={preferences} />}
               {activeTab === 'receive' && <ReceiveView showToast={showToast} />}
               {activeTab === 'devices' && <DevicesView />}
               {activeTab === 'history' && <HistoryView />}
