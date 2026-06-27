@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { io } from 'socket.io-client';
 
 // --- High-Performance Transfer Constants ---
-const SEND_CHUNK_SIZE = 64 * 1024;        // 64KB - max safe for all browsers over SCTP
-const HIGH_WATER_MARK = 16 * 1024 * 1024; // 16MB - pause sending when buffer exceeds this
-const LOW_WATER_MARK = 256 * 1024;        // 256KB - resume sending when buffer drops to this
+const SEND_CHUNK_SIZE = 16384;            // 16KB - official safe chunk size for WebRTC cross-browser stability
+const HIGH_WATER_MARK = 2 * 1024 * 1024;  // 2MB - prevents mobile buffers from overflowing and dropping connection
+const LOW_WATER_MARK = 512 * 1024;        // 512KB - threshold to resume sending
 const UI_THROTTLE_MS = 100;               // Update progress bar max 10x/sec
 const SIGNAL_URL = import.meta.env.VITE_SIGNAL_URL || import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : `http://${window.location.hostname}:3001`);
 
@@ -290,10 +290,32 @@ export function useWebRTC() {
         });
         channels.forEach(dc => dc.send(batchInfoStr));
 
-        // Pure event-driven drain wait — no setTimeout polling
-        const waitForDrain = (dc) => new Promise(resolve => {
-            dc.addEventListener('bufferedamountlow', resolve, { once: true });
-        });
+        // Pure event-driven drain wait with safety polling fallback
+        const waitForDrain = (dc) => {
+            if (dc.bufferedAmount <= dc.bufferedAmountLowThreshold) {
+                return Promise.resolve();
+            }
+            return new Promise(resolve => {
+                let resolved = false;
+                const handleDrain = () => {
+                    if (resolved) return;
+                    resolved = true;
+                    resolve();
+                };
+                dc.addEventListener('bufferedamountlow', handleDrain, { once: true });
+                // Safety polling fallback to prevent race conditions or missed events
+                const timer = setInterval(() => {
+                    if (dc.bufferedAmount <= dc.bufferedAmountLowThreshold || dc.readyState !== 'open') {
+                        clearInterval(timer);
+                        if (!resolved) {
+                            resolved = true;
+                            dc.removeEventListener('bufferedamountlow', handleDrain);
+                            resolve();
+                        }
+                    }
+                }, 30);
+            });
+        };
 
         for (let i = 0; i < filesArray.length; i++) {
             if (isCancelledRef.current) break;
@@ -313,8 +335,25 @@ export function useWebRTC() {
             // Tiny delay so receiver processes the metadata JSON before binary chunks arrive
             await new Promise(resolve => setTimeout(resolve, 5));
 
-            // Stream the file — read chunks directly from the browser's file stream
-            const reader = file.stream().getReader();
+            // Stream the file — read chunks directly from the browser's file stream, with fallback for older browsers
+            let reader;
+            if (typeof file.stream === 'function') {
+                reader = file.stream().getReader();
+            } else {
+                const makeStreamReader = (f) => {
+                    let offset = 0;
+                    return {
+                        read: async () => {
+                            if (offset >= f.size) return { done: true };
+                            const chunkSlice = f.slice(offset, offset + 1024 * 1024); // 1MB reading blocks
+                            offset += chunkSlice.size;
+                            const buffer = await chunkSlice.arrayBuffer();
+                            return { done: false, value: new Uint8Array(buffer) };
+                        }
+                    };
+                };
+                reader = makeStreamReader(file);
+            }
 
             while (true) {
                 if (isCancelledRef.current) break;
@@ -335,12 +374,14 @@ export function useWebRTC() {
                     if (isCancelledRef.current) break;
 
                     const end = Math.min(offset + SEND_CHUNK_SIZE, value.byteLength);
-                    const chunk = value.subarray(offset, end); // subarray = zero-copy view
+                    
+                    // Create an ArrayBuffer slice directly for 100% browser/mobile compatibility
+                    const chunk = value.buffer.slice(value.byteOffset + offset, value.byteOffset + end);
 
                     for (const dc of channels) {
                         if (dc.readyState !== 'open') continue;
 
-                        // HIGH WATER MARK backpressure — pure event-driven, no polling
+                        // HIGH WATER MARK backpressure — pure event-driven
                         if (dc.bufferedAmount > HIGH_WATER_MARK) {
                             await waitForDrain(dc);
                         }

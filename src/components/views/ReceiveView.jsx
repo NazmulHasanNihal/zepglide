@@ -228,7 +228,8 @@ export default function ReceiveView({ showToast, playSfx }) {
               <div className="h-20 w-20 bg-[var(--success-10)] text-[var(--success)] rounded-full flex items-center justify-center mx-auto mb-8 shrink-0 shadow-lg border border-[var(--success-20)]">
                 <CheckCircle2 size={40} />
               </div>
-              <h2 className="text-2xl font-black text-[var(--text-main)] mb-3 tracking-tighter uppercase">Transfer Complete</h2>
+              <h2 className="text-2xl font-black text-[var(--text-main)] mb-1 tracking-tighter uppercase">Transfer Complete</h2>
+              <p className="text-xs font-bold text-[var(--text-muted)] mb-6">If the download didn't start automatically, click the buttons below to save.</p>
               
               <div className="w-full max-h-[300px] overflow-y-auto mb-6 flex flex-col gap-3 custom-scrollbar px-2">
                 {(Array.isArray(receivedFile) ? receivedFile : [receivedFile]).map((file, idx) => (
