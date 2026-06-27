@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { io } from 'socket.io-client';
 
 // --- High-Performance Transfer Constants ---
-const SEND_CHUNK_SIZE = 16384;            // 16KB - official safe chunk size for WebRTC cross-browser stability
-const HIGH_WATER_MARK = 2 * 1024 * 1024;  // 2MB - prevents mobile buffers from overflowing and dropping connection
-const LOW_WATER_MARK = 512 * 1024;        // 512KB - threshold to resume sending
+const SEND_CHUNK_SIZE = 262144;           // 256KB - optimized chunk size for high-speed throughput
+const HIGH_WATER_MARK = 16 * 1024 * 1024; // 16MB - larger buffer for faster networks without overwhelming memory
+const LOW_WATER_MARK = 4 * 1024 * 1024;   // 4MB - threshold to resume sending
 const UI_THROTTLE_MS = 100;               // Update progress bar max 10x/sec
 const SIGNAL_URL = import.meta.env.VITE_SIGNAL_URL || import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : `http://${window.location.hostname}:3001`);
 
