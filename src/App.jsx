@@ -70,8 +70,13 @@ const THEMES = {
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(true);
-  const [activeTheme, setActiveTheme] = useState('ocean');
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const saved = localStorage.getItem('zepglide_isDarkMode');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+  const [activeTheme, setActiveTheme] = useState(() => {
+    return localStorage.getItem('zepglide_activeTheme') || 'ocean';
+  });
   const [customTheme, setCustomTheme] = useState({ primary: '#10B981', bgMain: '#000000', bgSurface: '#111111', logoUrl: '' });
 
   useEffect(() => {
@@ -97,6 +102,14 @@ export default function App() {
       return () => subscription.unsubscribe();
     });
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem('zepglide_isDarkMode', JSON.stringify(isDarkMode));
+  }, [isDarkMode]);
+
+  useEffect(() => {
+    localStorage.setItem('zepglide_activeTheme', activeTheme);
+  }, [activeTheme]);
 
   // Compute theme data including custom brand
   const themeData = activeTheme === 'custom' ? {
