@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { io } from 'socket.io-client';
 
-const CHUNK_SIZE = 16384; // 16KB optimal for WebRTC
+// --- High-Performance Transfer Constants ---
+const SEND_CHUNK_SIZE = 64 * 1024;        // 64KB - max safe for all browsers over SCTP
+const HIGH_WATER_MARK = 16 * 1024 * 1024; // 16MB - pause sending when buffer exceeds this
+const LOW_WATER_MARK = 256 * 1024;        // 256KB - resume sending when buffer drops to this
+const UI_THROTTLE_MS = 100;               // Update progress bar max 10x/sec
 const SIGNAL_URL = import.meta.env.VITE_SIGNAL_URL || import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : `http://${window.location.hostname}:3001`);
 
 export function useWebRTC() {
@@ -96,10 +100,9 @@ export function useWebRTC() {
         transferredBytesRef.current += data.byteLength;
         const currentMeta = metadataRef.current;
         if (currentMeta && totalSizeRef.current > 0) {
-            const newProgress = Math.round((transferredBytesRef.current / totalSizeRef.current) * 100);
             const now = Date.now();
-            if (now - lastProgressTimeRef.current > 50 || newProgress === 100) {
-                setProgress(newProgress);
+            if (now - lastProgressTimeRef.current > UI_THROTTLE_MS || transferredBytesRef.current >= totalSizeRef.current) {
+                setProgress(Math.round((transferredBytesRef.current / totalSizeRef.current) * 100));
                 lastProgressTimeRef.current = now;
             }
         }
@@ -130,7 +133,7 @@ export function useWebRTC() {
     // --- Data channel setup ---
     const setupDataChannel = useCallback((dc, targetId) => {
         dc.binaryType = 'arraybuffer';
-        dc.bufferedAmountLowThreshold = 8 * 1024 * 1024;
+        dc.bufferedAmountLowThreshold = LOW_WATER_MARK;
         dc.onopen = () => {
             setStatus('connected');
             console.log('[WebRTC] Data Channel Open for', targetId);
@@ -268,7 +271,7 @@ export function useWebRTC() {
         });
     }, [setupPeerConnection]);
 
-    // --- Send files ---
+    // --- Send files (High-Performance Engine) ---
     const sendFiles = useCallback(async (filesArray) => {
         const channels = Object.values(dataChannelsRef.current).filter(dc => dc.readyState === 'open');
         if (channels.length === 0) {
@@ -287,7 +290,14 @@ export function useWebRTC() {
         });
         channels.forEach(dc => dc.send(batchInfoStr));
 
+        // Pure event-driven drain wait — no setTimeout polling
+        const waitForDrain = (dc) => new Promise(resolve => {
+            dc.addEventListener('bufferedamountlow', resolve, { once: true });
+        });
+
         for (let i = 0; i < filesArray.length; i++) {
+            if (isCancelledRef.current) break;
+
             const file = filesArray[i];
             transferredBytesRef.current = 0;
             totalSizeRef.current = file.size;
@@ -300,16 +310,16 @@ export function useWebRTC() {
             });
             channels.forEach(dc => dc.send(metadataStr));
 
-            // Small delay to let receiver process metadata
-            await new Promise(resolve => setTimeout(resolve, 10));
+            // Tiny delay so receiver processes the metadata JSON before binary chunks arrive
+            await new Promise(resolve => setTimeout(resolve, 5));
 
-            // Stream file using ReadableStream
-            const stream = file.stream();
-            const reader = stream.getReader();
-            const CHUNK_SIZE = 32 * 1024; // 32KB is optimal for WebRTC without causing buffer bloat
+            // Stream the file — read chunks directly from the browser's file stream
+            const reader = file.stream().getReader();
 
             while (true) {
                 if (isCancelledRef.current) break;
+
+                // Handle pause
                 while (isPausedRef.current) {
                     if (isCancelledRef.current) break;
                     await new Promise(resolve => setTimeout(resolve, 100));
@@ -319,47 +329,43 @@ export function useWebRTC() {
                 const { done, value } = await reader.read();
                 if (done) break;
 
+                // Send the stream chunk in SEND_CHUNK_SIZE pieces
                 let offset = 0;
                 while (offset < value.byteLength) {
-                    const end = Math.min(offset + CHUNK_SIZE, value.byteLength);
-                    const chunk = value.slice(offset, end);
-                    
+                    if (isCancelledRef.current) break;
+
+                    const end = Math.min(offset + SEND_CHUNK_SIZE, value.byteLength);
+                    const chunk = value.subarray(offset, end); // subarray = zero-copy view
+
                     for (const dc of channels) {
                         if (dc.readyState !== 'open') continue;
 
-                        // Bulletproof backpressure polling
-                        while (dc.bufferedAmount > dc.bufferedAmountLowThreshold) {
-                            await new Promise(resolve => {
-                                const checkBuffer = () => resolve();
-                                dc.addEventListener('bufferedamountlow', checkBuffer);
-                                setTimeout(() => {
-                                    dc.removeEventListener('bufferedamountlow', checkBuffer);
-                                    resolve();
-                                }, 50); // Poll every 50ms just in case event is missed
-                            });
+                        // HIGH WATER MARK backpressure — pure event-driven, no polling
+                        if (dc.bufferedAmount > HIGH_WATER_MARK) {
+                            await waitForDrain(dc);
                         }
-                        
-                        try {
-                            dc.send(chunk.buffer || chunk);
-                        } catch (err) {
-                            console.error('[WebRTC] Send error:', err);
-                        }
+
+                        dc.send(chunk);
                     }
 
-                    transferredBytesRef.current += chunk.byteLength;
-                    const newProgress = Math.round((transferredBytesRef.current / file.size) * 100);
-                    const now = Date.now();
-                    if (now - lastProgressTimeRef.current > 50 || newProgress === 100) {
-                        setProgress(newProgress);
-                        lastProgressTimeRef.current = now;
-                    }
                     offset = end;
+                    transferredBytesRef.current += chunk.byteLength;
+                }
+
+                // Throttle UI updates to avoid React re-renders choking the send loop
+                const now = Date.now();
+                if (now - lastProgressTimeRef.current > UI_THROTTLE_MS) {
+                    setProgress(Math.round((transferredBytesRef.current / file.size) * 100));
+                    lastProgressTimeRef.current = now;
                 }
             }
 
-            // Delay between files so receiver can finalize
+            // Ensure final 100% is displayed
+            setProgress(100);
+
+            // Brief gap between files for receiver to finalize
             if (i < filesArray.length - 1) {
-                await new Promise(resolve => setTimeout(resolve, 10));
+                await new Promise(resolve => setTimeout(resolve, 5));
             }
         }
         setStatus('success');
