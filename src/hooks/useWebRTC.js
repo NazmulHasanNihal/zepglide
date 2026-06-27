@@ -29,6 +29,7 @@ export function useWebRTC() {
     const receivedFileRef = useRef(null);
     const isPausedRef = useRef(false);
     const isCancelledRef = useRef(false);
+    const lastProgressTimeRef = useRef(0);
 
     // Keep statusRef in sync
     useEffect(() => { statusRef.current = status; }, [status]);
@@ -95,7 +96,12 @@ export function useWebRTC() {
         transferredBytesRef.current += data.byteLength;
         const currentMeta = metadataRef.current;
         if (currentMeta && totalSizeRef.current > 0) {
-            setProgress(Math.round((transferredBytesRef.current / totalSizeRef.current) * 100));
+            const newProgress = Math.round((transferredBytesRef.current / totalSizeRef.current) * 100);
+            const now = Date.now();
+            if (now - lastProgressTimeRef.current > 50 || newProgress === 100) {
+                setProgress(newProgress);
+                lastProgressTimeRef.current = now;
+            }
         }
 
         if (transferredBytesRef.current >= totalSizeRef.current && currentMeta) {
@@ -124,7 +130,7 @@ export function useWebRTC() {
     // --- Data channel setup ---
     const setupDataChannel = useCallback((dc, targetId) => {
         dc.binaryType = 'arraybuffer';
-        dc.bufferedAmountLowThreshold = 2 * 1024 * 1024;
+        dc.bufferedAmountLowThreshold = 8 * 1024 * 1024;
         dc.onopen = () => {
             setStatus('connected');
             console.log('[WebRTC] Data Channel Open for', targetId);
@@ -341,7 +347,12 @@ export function useWebRTC() {
                     }
 
                     transferredBytesRef.current += chunk.byteLength;
-                    setProgress(Math.round((transferredBytesRef.current / file.size) * 100));
+                    const newProgress = Math.round((transferredBytesRef.current / file.size) * 100);
+                    const now = Date.now();
+                    if (now - lastProgressTimeRef.current > 50 || newProgress === 100) {
+                        setProgress(newProgress);
+                        lastProgressTimeRef.current = now;
+                    }
                     offset = end;
                 }
             }
