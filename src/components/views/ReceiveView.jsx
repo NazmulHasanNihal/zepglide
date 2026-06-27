@@ -293,16 +293,7 @@ export default function ReceiveView({ showToast, playSfx }) {
                 ))}
               </div>
               
-              <div className="w-full max-w-xs mx-auto mb-10 flex items-center gap-3 bg-[var(--bg-main)] px-4 py-2 rounded-xl border border-[var(--border-main)] focus-within:border-[var(--primary)]">
-                <Lock size={16} className="text-[var(--text-muted)]" />
-                <input 
-                  type="password" 
-                  placeholder="Password (if required)" 
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="bg-transparent border-none text-sm font-bold text-[var(--text-main)] w-full focus:outline-none"
-                />
-              </div>
+
 
               {isScanning ? (
                  <div className="w-full max-w-xs mx-auto mb-6 bg-black rounded-2xl overflow-hidden shadow-xl border-2 border-[var(--primary)] relative group">

@@ -295,12 +295,12 @@ export function useWebRTC() {
             channels.forEach(dc => dc.send(metadataStr));
 
             // Small delay to let receiver process metadata
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise(resolve => setTimeout(resolve, 10));
 
             // Stream file using ReadableStream
             const stream = file.stream();
             const reader = stream.getReader();
-            const CHUNK_SIZE = 64 * 1024; // 64KB is optimal for WebRTC
+            const CHUNK_SIZE = 32 * 1024; // 32KB is optimal for WebRTC without causing buffer bloat
 
             while (true) {
                 if (isCancelledRef.current) break;
@@ -348,7 +348,7 @@ export function useWebRTC() {
 
             // Delay between files so receiver can finalize
             if (i < filesArray.length - 1) {
-                await new Promise(resolve => setTimeout(resolve, 200));
+                await new Promise(resolve => setTimeout(resolve, 10));
             }
         }
         setStatus('success');
