@@ -145,8 +145,8 @@ export default function ProfileView({ onLogout, profile, isAdmin, onEditClick, s
                  </div>
                  
                  <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 md:gap-3">
-                   {(profile.plan === 'Pro' || profile.plan === 'Teams' || profile.plan === 'Enterprise') && (
-                     <span className="px-3 md:px-4 py-1 bg-[var(--warning-10)] text-[var(--warning)] border border-[var(--warning-20)] text-[9px] md:text-[10px] font-black uppercase tracking-widest rounded-full shadow-sm flex items-center gap-1.5"><Crown size={12} /> {profile.plan}</span>
+                   {(profile.plan === 'Pro' || profile.plan === 'Teams' || profile.plan === 'Enterprise' || isAdmin) && (
+                     <span className="px-3 md:px-4 py-1 bg-[var(--warning-10)] text-[var(--warning)] border border-[var(--warning-20)] text-[9px] md:text-[10px] font-black uppercase tracking-widest rounded-full shadow-sm flex items-center gap-1.5"><Crown size={12} /> {isAdmin ? 'Admin' : profile.plan}</span>
                    )}
                    {stats.totalHandshakes >= 10 && (
                      <span className="px-3 md:px-4 py-1 bg-[var(--accent-10)] text-[var(--accent)] border border-[var(--accent-20)] text-[9px] md:text-[10px] font-black uppercase tracking-widest rounded-full shadow-sm flex items-center gap-1.5"><Trophy size={12} /> Power User</span>

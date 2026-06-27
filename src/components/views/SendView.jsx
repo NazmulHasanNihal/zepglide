@@ -18,7 +18,8 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
   const fileInputRef = React.useRef(null);
   const [cancelStep, setCancelStep] = useState(0);
 
-  const isPro = profile?.plan === 'Pro' || profile?.plan === 'Teams';
+  const isAdmin = profile?.role === 'admin' || profile?.email === 'nazmulhas36@gmail.com' || profile?.email === import.meta.env.VITE_ADMIN_EMAIL;
+  const isPro = profile?.plan === 'Pro' || profile?.plan === 'Teams' || isAdmin;
 
   // Handle global dropped file (from Dashboard drag-drop)
   useEffect(() => {

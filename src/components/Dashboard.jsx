@@ -210,9 +210,9 @@ const Dashboard = React.memo(({ isAuthenticated, onLoginClick, onLogout, isDarkM
                   <div className="absolute right-0 mt-3 w-64 bg-[var(--bg-surface)] border border-[var(--border-main)] rounded-2xl shadow-xl z-50 overflow-hidden py-1 animate-in fade-in slide-in-from-top-2 origin-top-right">
                     <div className="px-4 py-4 border-b border-[var(--border-main)] bg-[var(--bg-main)]/30">
                        <p className="text-sm font-bold text-[var(--text-main)] truncate">{profile.name}</p>
-                       {profile.plan && profile.plan.toLowerCase() !== 'free' && profile.plan.toLowerCase() !== 'default' && (
-                          <p className="text-xs text-[var(--text-muted)] truncate mt-0.5 font-medium flex items-center gap-1"><Crown size={12} className="text-[var(--warning)]" /> {profile.plan} Member</p>
-                       )}
+                       {(profile.plan && profile.plan.toLowerCase() !== 'free' && profile.plan.toLowerCase() !== 'default') || isAdmin ? (
+                          <p className="text-xs text-[var(--text-muted)] truncate mt-0.5 font-medium flex items-center gap-1"><Crown size={12} className="text-[var(--warning)]" /> {isAdmin ? 'Admin' : profile.plan + ' Member'}</p>
+                       ) : null}
                     </div>
                     <div className="py-1">
                       <DropdownItem icon={<User size={16} />} label="My Profile" onClick={() => { handleTabClick('profile'); setIsProfileDropdownOpen(false); }} />

@@ -10,7 +10,8 @@ export default function SettingsView({ isDarkMode, setIsDarkMode, activeTheme, s
   const fileInputRef = useRef(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
-  const isPro = profile?.plan === 'Pro' || profile?.plan === 'Teams';
+  const isAdmin = profile?.role === 'admin' || profile?.email === 'nazmulhas36@gmail.com' || profile?.email === import.meta.env.VITE_ADMIN_EMAIL;
+  const isPro = profile?.plan === 'Pro' || profile?.plan === 'Teams' || isAdmin;
 
   const handleCustomThemeChange = (key, value) => {
     const updatedCustom = { ...customTheme, [key]: value };

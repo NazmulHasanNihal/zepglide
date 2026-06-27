@@ -119,12 +119,11 @@
 
 /* --- RESPONSIVE TERMINAL UTILITIES --- */
 
-.responsive-table-grid {
-  display: flex;
-  flex-direction: column;
-}
-
 @media (max-width: 768px) {
+  .responsive-table-grid {
+    display: flex;
+    flex-direction: column;
+  }
   .responsive-table-grid thead { display: none; }
   .responsive-table-grid tr {
     display: flex;
