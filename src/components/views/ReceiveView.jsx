@@ -7,7 +7,7 @@ export default function ReceiveView({ showToast }) {
   const [pin, setPin] = useState('');
   const [password, setPassword] = useState('');
   const [isScanning, setIsScanning] = useState(false);
-  const { status, progress, speed, eta, metadata, receivedFile, errorMsg, joinSession, cancelTransfer, retryTransfer, isSocketConnected, fingerprint } = useWebRTC();
+  const { status, progress, speed, eta, metadata, receivedFile, errorMsg, joinSession, acceptTransfer, cancelTransfer, retryTransfer, isSocketConnected, fingerprint } = useWebRTC();
   
   const facts = ["Bypassing Symmetric NAT...", "Establishing Quantum-Safe Keys...", "Securing P2P WebRTC Layer...", "Discovering Mesh Route..."];
   const [factIndex, setFactIndex] = useState(0);
@@ -23,10 +23,12 @@ export default function ReceiveView({ showToast }) {
     if (status === 'success' && receivedFile) {
       const files = Array.isArray(receivedFile) ? receivedFile : [receivedFile];
       files.forEach(f => {
-          const a = document.createElement('a');
-          a.href = f.url;
-          a.download = f.name;
-          a.click();
+          if (!f.savedToDisk) {
+              const a = document.createElement('a');
+              a.href = f.url;
+              a.download = f.name;
+              a.click();
+          }
       });
     }
   }, [status, receivedFile]);
@@ -157,6 +159,32 @@ export default function ReceiveView({ showToast }) {
                 Cancel
               </button>
            </div>
+        ) : status === 'awaiting_approval' ? (
+           <div className="flex flex-col items-center py-6 w-full animate-in slide-in-from-bottom-8 duration-500 bg-[var(--bg-main)] p-6 rounded-3xl border border-[var(--border-main)] text-center shadow-inner">
+              <div className="h-16 w-16 bg-[var(--primary-10)] text-[var(--primary)] rounded-[1.5rem] flex items-center justify-center mx-auto mb-6 shadow-sm border border-[var(--primary-20)]">
+                <FileText size={28} />
+              </div>
+              <h3 className="text-2xl font-black text-[var(--text-main)] tracking-tight uppercase mb-2">Incoming File</h3>
+              <p className="text-sm font-bold text-[var(--primary)] mb-2 px-4">
+                {metadata?.name}
+              </p>
+              <p className="text-xs font-bold text-[var(--text-muted)] mb-8 uppercase tracking-widest">
+                {metadata ? formatBytes(metadata.size) : 'Unknown Size'}
+              </p>
+              
+              <button 
+                onClick={acceptTransfer}
+                className="w-full bg-[var(--primary)] text-white hover:brightness-110 px-8 py-4 mb-4 rounded-xl font-black text-xs uppercase tracking-widest transition-all duration-300 shadow-xl active:scale-95 flex items-center justify-center gap-2"
+              >
+                <Download size={16} /> Accept & Save
+              </button>
+              <button 
+                onClick={cancelTransfer}
+                className="w-full text-[var(--text-muted)] hover:text-[var(--danger)] hover:bg-[var(--danger-10)] px-8 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all duration-300 active:scale-95"
+              >
+                Decline
+              </button>
+           </div>
         ) : (status === 'transferring' || status === 'error') ? (
             <div className="flex flex-col w-full animate-in slide-in-from-bottom-8 duration-500">
                
@@ -238,12 +266,12 @@ export default function ReceiveView({ showToast }) {
                )}
             </div>
         ) : status === 'success' && receivedFile ? (
-          <div className="flex flex-col items-center py-6 animate-in zoom-in duration-500 w-full">
+            <div className="flex flex-col items-center py-6 animate-in zoom-in duration-500 w-full">
               <div className="h-20 w-20 bg-[var(--success-10)] text-[var(--success)] rounded-full flex items-center justify-center mx-auto mb-8 shrink-0 shadow-lg border border-[var(--success-20)]">
                 <CheckCircle2 size={40} />
               </div>
               <h2 className="text-2xl font-black text-[var(--text-main)] mb-1 tracking-tighter uppercase">Transfer Complete</h2>
-              <p className="text-xs font-bold text-[var(--text-muted)] mb-6">If the download didn't start automatically, click the buttons below to save.</p>
+              <p className="text-xs font-bold text-[var(--text-muted)] mb-6">Files have been safely received.</p>
               
               <div className="w-full max-h-[300px] overflow-y-auto mb-6 flex flex-col gap-3 custom-scrollbar px-2">
                 {(Array.isArray(receivedFile) ? receivedFile : [receivedFile]).map((file, idx) => (
@@ -254,25 +282,27 @@ export default function ReceiveView({ showToast }) {
                         </div>
                         <div className="overflow-hidden">
                           <p className="text-xs font-black text-[var(--text-main)] truncate tracking-tight">{file.name}</p>
-                          <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-wider">P2P Verified</p>
+                          <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-wider">{file.savedToDisk ? 'Saved to Disk' : 'P2P Verified'}</p>
                         </div>
                       </div>
-                      <a 
-                        href={file.url} 
-                        download={file.name}
-                        className="p-2 bg-[var(--primary-10)] text-[var(--primary)] hover:bg-[var(--primary)] hover:text-white rounded-xl transition-all duration-300 shadow-sm shrink-0"
-                      >
-                        <Download size={16} />
-                      </a>
+                      {!file.savedToDisk && (
+                        <a 
+                          href={file.url} 
+                          download={file.name}
+                          className="p-2 bg-[var(--primary-10)] text-[var(--primary)] hover:bg-[var(--primary)] hover:text-white rounded-xl transition-all duration-300 shadow-sm shrink-0"
+                        >
+                          <Download size={16} />
+                        </a>
+                      )}
                   </div>
                 ))}
               </div>
 
               <div className="flex w-full gap-3 mt-4">
-                {Array.isArray(receivedFile) && receivedFile.length > 1 && (
+                {Array.isArray(receivedFile) && receivedFile.length > 1 && receivedFile.some(f => !f.savedToDisk) && (
                   <button 
                     onClick={() => {
-                        receivedFile.forEach(f => {
+                        receivedFile.filter(f => !f.savedToDisk).forEach(f => {
                             const a = document.createElement('a');
                             a.href = f.url;
                             a.download = f.name;
@@ -284,7 +314,7 @@ export default function ReceiveView({ showToast }) {
                     <Download size={16} /> Download All
                   </button>
                 )}
-                <button onClick={() => window.location.href = '/'} className="flex-[0.5] text-[10px] font-black text-[var(--text-muted)] border border-[var(--border-main)] hover:bg-[var(--bg-main)] hover:text-[var(--primary)] rounded-2xl transition-colors uppercase tracking-[0.2em]">Close</button>
+                <button onClick={() => window.location.href = '/'} className="flex-1 text-[10px] font-black text-[var(--text-muted)] border border-[var(--border-main)] hover:bg-[var(--bg-main)] hover:text-[var(--primary)] rounded-2xl transition-colors uppercase tracking-[0.2em] py-4">Close</button>
               </div>
           </div>
         ) : (

@@ -35,6 +35,8 @@ export function useWebRTC() {
     const isCancelledRef = useRef(false);
     const lastProgressTimeRef = useRef(0);
     const candidateQueueRef = useRef({});
+    const fileStreamRef = useRef(null);
+    const useFileSystemApiRef = useRef(false);
 
     // Keep statusRef in sync
     useEffect(() => { statusRef.current = status; }, [status]);
@@ -73,12 +75,11 @@ export function useWebRTC() {
     }, [status]);
 
     // --- Incoming data handler (uses refs so it's always current) ---
-    const handleIncomingData = useCallback((data) => {
+    const handleIncomingData = useCallback(async (data) => {
         if (typeof data === 'string') {
             try {
                 const msg = JSON.parse(data);
                 if (msg.type === 'batch_info') {
-                    setStatus('transferring');
                     setReceivedFile([]);
                     receivedFileRef.current = [];
                 } else if (msg.type === 'metadata') {
@@ -88,6 +89,7 @@ export function useWebRTC() {
                     fileBufferRef.current = [];
                     transferredBytesRef.current = 0;
                     setProgress(0);
+                    setStatus('awaiting_approval');
                 } else if (msg.type === 'cancel') {
                     doCancel();
                 }
@@ -97,8 +99,18 @@ export function useWebRTC() {
             return;
         }
 
-        fileBufferRef.current.push(data);
         transferredBytesRef.current += data.byteLength;
+        
+        if (useFileSystemApiRef.current && fileStreamRef.current) {
+            try {
+                await fileStreamRef.current.write(data);
+            } catch (e) {
+                console.error("Stream write failed:", e);
+            }
+        } else {
+            fileBufferRef.current.push(data);
+        }
+
         const currentMeta = metadataRef.current;
         if (currentMeta && totalSizeRef.current > 0) {
             const now = Date.now();
@@ -109,8 +121,15 @@ export function useWebRTC() {
         }
 
         if (transferredBytesRef.current >= totalSizeRef.current && currentMeta) {
-            const blob = new Blob(fileBufferRef.current, { type: currentMeta.mime });
-            const fileObj = { blob, name: currentMeta.name, url: URL.createObjectURL(blob), index: currentMeta.index };
+            let fileObj;
+            if (useFileSystemApiRef.current && fileStreamRef.current) {
+                await fileStreamRef.current.close();
+                fileStreamRef.current = null;
+                fileObj = { name: currentMeta.name, savedToDisk: true, index: currentMeta.index };
+            } else {
+                const blob = new Blob(fileBufferRef.current, { type: currentMeta.mime });
+                fileObj = { blob, name: currentMeta.name, url: URL.createObjectURL(blob), index: currentMeta.index };
+            }
 
             const prevFiles = receivedFileRef.current || [];
             const updatedFiles = [...prevFiles, fileObj];
@@ -120,7 +139,7 @@ export function useWebRTC() {
             if (currentMeta.index === currentMeta.totalCount - 1) {
                 setStatus('success');
             }
-            // Reset for next file in batch
+            
             fileBufferRef.current = [];
             transferredBytesRef.current = 0;
             metadataRef.current = null;
@@ -130,6 +149,42 @@ export function useWebRTC() {
     // Stable ref for handleIncomingData so setupDataChannel always uses latest
     const handleIncomingDataRef = useRef(handleIncomingData);
     useEffect(() => { handleIncomingDataRef.current = handleIncomingData; }, [handleIncomingData]);
+
+    const acceptTransfer = useCallback(async () => {
+        if (!metadataRef.current) return;
+        
+        try {
+            if ('showSaveFilePicker' in window) {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName: metadataRef.current.name,
+                });
+                fileStreamRef.current = await handle.createWritable();
+                useFileSystemApiRef.current = true;
+            } else {
+                useFileSystemApiRef.current = false;
+            }
+            
+            setStatus('transferring');
+            
+            // Tell the sender we are ready
+            const readyStr = JSON.stringify({ type: 'ready' });
+            Object.values(dataChannelsRef.current).forEach(dc => {
+                if (dc.readyState === 'open') dc.send(readyStr);
+            });
+            
+        } catch (e) {
+            console.error("User cancelled or API failed", e);
+            if (e.name === 'AbortError') return; // User closed the save dialog
+            
+            // Fallback to memory
+            useFileSystemApiRef.current = false;
+            setStatus('transferring');
+            const readyStr = JSON.stringify({ type: 'ready' });
+            Object.values(dataChannelsRef.current).forEach(dc => {
+                if (dc.readyState === 'open') dc.send(readyStr);
+            });
+        }
+    }, []);
 
     // --- Data channel setup ---
     const setupDataChannel = useCallback((dc, targetId) => {
@@ -348,8 +403,23 @@ export function useWebRTC() {
             });
             channels.forEach(dc => dc.send(metadataStr));
 
-            // Tiny delay so receiver processes the metadata JSON before binary chunks arrive
-            await new Promise(resolve => setTimeout(resolve, 5));
+            // Wait for receiver to be ready (they must accept the file or choose save location)
+            setStatus('awaiting_approval');
+            await new Promise(resolve => {
+                const checkReady = (event) => {
+                    if (typeof event.data === 'string') {
+                        try {
+                            const msg = JSON.parse(event.data);
+                            if (msg.type === 'ready') {
+                                channels.forEach(dc => dc.removeEventListener('message', checkReady));
+                                resolve();
+                            }
+                        } catch(e) {}
+                    }
+                };
+                channels.forEach(dc => dc.addEventListener('message', checkReady));
+            });
+            setStatus('transferring');
 
             // Stream the file — read chunks directly from the browser's file stream, with fallback for older browsers
             let reader;
@@ -371,6 +441,8 @@ export function useWebRTC() {
                 reader = makeStreamReader(file);
             }
 
+            let yieldCounter = 0;
+
             while (true) {
                 if (isCancelledRef.current) break;
 
@@ -391,6 +463,13 @@ export function useWebRTC() {
 
                     const end = Math.min(offset + SEND_CHUNK_SIZE, value.byteLength);
                     
+                    // Yield event loop every ~2MB to allow GC and UI updates (prevents freeze)
+                    yieldCounter += (end - offset);
+                    if (yieldCounter > 2 * 1024 * 1024) {
+                        await new Promise(r => setTimeout(r, 0));
+                        yieldCounter = 0;
+                    }
+
                     // Create an ArrayBuffer slice directly for 100% browser/mobile compatibility
                     const chunk = value.buffer.slice(value.byteOffset + offset, value.byteOffset + end);
 
@@ -547,6 +626,6 @@ export function useWebRTC() {
 
     return {
         status, progress, speed, eta, metadata, receivedFile, errorMsg, isSocketConnected, fingerprint,
-        startSession, joinSession, sendFiles, cancelTransfer, pauseTransfer, resumeTransfer, retryTransfer
+        startSession, joinSession, acceptTransfer, sendFiles, cancelTransfer, pauseTransfer, resumeTransfer, retryTransfer
     };
 }
