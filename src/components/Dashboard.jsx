@@ -190,7 +190,7 @@ const Dashboard = React.memo(({ isAuthenticated, onLoginClick, onLogout, isDarkM
         
         <div className="flex items-center gap-4 shrink-0">
           <button onClick={() => setIsCmdMenuOpen(true)} className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-[var(--bg-main)] border border-[var(--border-main)] hover:border-[var(--primary-30)] text-[var(--text-muted)] rounded-xl text-xs font-bold transition-all"><Command size={14}/> <span className="opacity-70">Cmd + K</span></button>
-          <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2.5 rounded-full transition-all duration-300 text-[var(--text-muted)] hover:text-[var(--primary)] hover:bg-[var(--bg-main)] active:scale-90">{isDarkMode ? <Sun size={20} /> : <Moon size={20} />}</button>
+          <button title="Toggle Dark/Light Mode" onClick={() => setIsDarkMode(!isDarkMode)} className="p-2.5 rounded-full transition-all duration-300 text-[var(--text-muted)] hover:text-[var(--primary)] hover:bg-[var(--bg-main)] active:scale-90">{isDarkMode ? <Sun size={20} /> : <Moon size={20} />}</button>
 
           {isAuthenticated ? (
             <div className="relative">

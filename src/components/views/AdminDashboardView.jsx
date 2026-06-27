@@ -17,14 +17,40 @@ export default function AdminDashboardView({ showToast }) {
     blacklisted_regions: []
   });
 
-  const [threatScore] = useState(14); 
-  const { playSfx } = useSound();
-
   const [transfers, setTransfers] = useState([]);
   const [users, setUsers] = useState([]);
   const [broadcastMsg, setBroadcastMsg] = useState('');
   const [broadcastStatus, setBroadcastStatus] = useState('idle');
-  const [trafficSpike, setTrafficSpike] = useState(false);
+  const [heatmap, setHeatmap] = useState(Array(24).fill(0));
+
+  // Compute real heatmap from recent transfers
+  useEffect(() => {
+    if (!transfers || transfers.length === 0) {
+      setHeatmap(Array(24).fill(0));
+      return;
+    }
+    
+    const sizes = transfers.slice(0, 24).map(t => {
+      const match = (t.size || '').match(/([\d.]+)\s*(GB|MB|KB|TB)/i);
+      if (!match) return 0;
+      const val = parseFloat(match[1]);
+      const unit = match[2].toUpperCase();
+      if (unit === 'TB') return val * 1024 * 1024;
+      if (unit === 'GB') return val * 1024;
+      if (unit === 'MB') return val;
+      if (unit === 'KB') return val / 1024;
+      return 0;
+    });
+    
+    // Pad to 24 bars if fewer transfers exist
+    while(sizes.length < 24) sizes.push(0);
+    // Reverse so newest transfers are on the right
+    sizes.reverse();
+    
+    const max = Math.max(...sizes, 10); // avoid div by zero, baseline 10MB
+    const normalized = sizes.map(s => (s / max) * 100);
+    setHeatmap(normalized);
+  }, [transfers]);
 
   const [metrics, setMetrics] = useState({
      activeTransfers: 0,
@@ -166,25 +192,22 @@ export default function AdminDashboardView({ showToast }) {
     <div className="flex flex-col gap-10 w-full max-w-5xl mx-auto mt-2 pb-12 animate-in fade-in duration-700">
       
       {/* 1. Status Bar */}
-      <div className={`rounded-[2.5rem] p-8 flex flex-col md:flex-row items-center justify-between shadow-2xl transition-all duration-700 border-2 gap-6 ${config.maintenance_mode ? 'bg-[var(--danger-10)] border-[var(--danger)]' : trafficSpike ? 'bg-[var(--warning-10)] border-[var(--warning)]' : 'bg-[var(--bg-surface)] border-[var(--border-main)]'}`}>
+      <div className={`rounded-[2.5rem] p-8 flex flex-col md:flex-row items-center justify-between shadow-2xl transition-all duration-700 border-2 gap-6 ${config.maintenance_mode ? 'bg-[var(--danger-10)] border-[var(--danger)]' : 'bg-[var(--bg-surface)] border-[var(--border-main)]'}`}>
         <div className="flex items-center gap-6">
           <div className="relative flex h-8 w-8">
-            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${config.maintenance_mode ? 'bg-[var(--danger)]' : trafficSpike ? 'bg-[var(--warning)] duration-75' : 'bg-[var(--success)]'}`}></span>
-            <span className={`relative inline-flex rounded-full h-8 w-8 ${config.maintenance_mode ? 'bg-[var(--danger)]' : trafficSpike ? 'bg-[var(--warning)]' : 'bg-[var(--success)]'}`}></span>
+            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${config.maintenance_mode ? 'bg-[var(--danger)]' : 'bg-[var(--success)]'}`}></span>
+            <span className={`relative inline-flex rounded-full h-8 w-8 ${config.maintenance_mode ? 'bg-[var(--danger)]' : 'bg-[var(--success)]'}`}></span>
           </div>
           <div>
-            <h4 className={`text-2xl font-black tracking-tighter uppercase ${config.maintenance_mode ? 'text-[var(--danger)]' : trafficSpike ? 'text-[var(--warning)]' : 'text-[var(--text-main)]'}`}>
-              System: {config.maintenance_mode ? 'MAINTENANCE' : trafficSpike ? 'HIGH LOAD' : 'NOMINAL'}
+            <h4 className={`text-2xl font-black tracking-tighter uppercase ${config.maintenance_mode ? 'text-[var(--danger)]' : 'text-[var(--text-main)]'}`}>
+              System: {config.maintenance_mode ? 'MAINTENANCE' : 'NOMINAL'}
             </h4>
             <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[var(--text-muted)] mt-2">Core routing clusters active.</p>
           </div>
         </div>
         <div className="flex items-center gap-4 w-full md:w-auto">
-           <button onClick={() => setTrafficSpike(!trafficSpike)} className="px-4 py-2 bg-[var(--bg-main)] hover:bg-[var(--bg-hover)] text-[var(--text-main)] rounded-xl border border-[var(--border-main)] text-xs font-bold transition-colors shadow-sm flex-1 md:flex-initial">
-             Test Load
-           </button>
-           <div className={`px-5 py-3 rounded-xl border-2 font-mono text-lg font-black shadow-inner flex-1 md:flex-initial text-center transition-all duration-500 ${trafficSpike ? 'bg-[var(--warning-10)] border-[var(--warning)] text-[var(--warning)] scale-105' : 'bg-[var(--bg-main)] border-[var(--border-main)] text-[var(--text-main)]'}`}>
-             {trafficSpike ? '84,291 req/s' : metrics.trafficRate}
+           <div className="px-5 py-3 rounded-xl border-2 font-mono text-lg font-black shadow-inner flex-1 md:flex-initial text-center transition-all duration-500 bg-[var(--bg-main)] border-[var(--border-main)] text-[var(--text-main)]">
+             {metrics.trafficRate}
            </div>
         </div>
       </div>
@@ -286,11 +309,10 @@ export default function AdminDashboardView({ showToast }) {
       </div>
 
       {/* 6. Threat Intel Feed (REAL TIME) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 gap-8">
         <div className="bg-[var(--bg-surface)] border border-[var(--border-main)] rounded-[3rem] p-10 shadow-2xl flex flex-col">
            <div className="flex items-center justify-between mb-8">
                <h3 className="text-2xl font-black text-[var(--text-main)] flex items-center gap-4 tracking-tighter uppercase"><FileWarning className="text-[var(--danger)] shrink-0" size={32} />Threat Intel</h3>
-               <span className="text-[9px] font-black px-3 py-1 bg-[var(--danger-10)] text-[var(--danger)] border border-[var(--danger-20)] rounded-lg animate-pulse uppercase tracking-widest">Live Attack Data</span>
            </div>
            <div className="flex flex-col gap-3 max-h-[350px] overflow-y-auto pr-2 scrollbar-hide">
               <div className="py-12 border-2 border-dashed border-[var(--border-main)] rounded-3xl flex flex-col items-center justify-center text-[var(--text-muted)] gap-3">
@@ -298,80 +320,6 @@ export default function AdminDashboardView({ showToast }) {
                  <p className="text-xs font-bold uppercase tracking-widest text-[var(--success)]">No Active Threats</p>
                  <p className="text-[10px] opacity-60">All systems nominal. Zero anomalies detected.</p>
               </div>
-           </div>
-        </div>
-
-        <div className="bg-[var(--bg-surface)] border border-[var(--border-main)] rounded-[3rem] p-10 shadow-2xl flex flex-col">
-           <div className="flex items-center justify-between mb-8">
-              <h3 className="text-2xl font-black text-[var(--text-main)] flex items-center gap-4 tracking-tighter uppercase"><ShieldAlert className="text-[var(--danger)] shrink-0" size={32} />Staff Session Kill-Switch</h3>
-              <span className="text-[9px] font-black px-3 py-1 bg-[var(--primary-10)] text-[var(--primary)] border border-[var(--primary-20)] rounded-lg uppercase tracking-widest">Active Admin Tokens</span>
-           </div>
-           <div className="flex flex-col gap-4">
-              {staffSessions.map((sess) => (
-                <div key={sess.id} className="bg-[var(--bg-main)] p-5 rounded-2xl border border-[var(--border-main)] flex items-center justify-between group hover:border-[var(--danger-30)] transition-all">
-                   <div className="flex items-center gap-4">
-                      <div className="h-10 w-10 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-main)] flex items-center justify-center text-[var(--primary)] shadow-sm">
-                         <UserCircle size={20} />
-                      </div>
-                      <div className="flex flex-col">
-                         <span className="text-[11px] font-black text-[var(--text-main)] uppercase tracking-tight">{sess.user}</span>
-                         <div className="flex items-center gap-2 text-[9px] text-[var(--text-muted)] font-mono">
-                            <span>{sess.ip}</span>
-                            <span className="opacity-30">•</span>
-                            <span>{sess.location}</span>
-                         </div>
-                      </div>
-                   </div>
-                   <div className="flex items-center gap-4">
-                      <div className="hidden md:flex flex-col items-end">
-                         <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-widest opacity-60">Last Pulse</span>
-                         <span className="text-[10px] font-black text-[var(--success)]">Online Now</span>
-                      </div>
-                      <button 
-                        onClick={() => handleRevokeSession(sess.id)}
-                        className="p-2.5 bg-[var(--danger-10)] text-[var(--danger)] hover:bg-[var(--danger)] hover:text-white border border-[var(--danger-20)] rounded-xl transition-all shadow-sm active:scale-95"
-                        title="Sever Session"
-                      >
-                         <Skull size={16} />
-                      </button>
-                   </div>
-                </div>
-              ))}
-              {staffSessions.length === 0 && (
-                <div className="py-12 border-2 border-dashed border-[var(--border-main)] rounded-3xl flex flex-col items-center justify-center text-[var(--text-muted)] gap-3">
-                   <ShieldCheck size={40} className="opacity-20" />
-                   <p className="text-xs font-bold uppercase tracking-widest">No Active Staff Sessions</p>
-                </div>
-              )}
-           </div>
-        </div>
-
-        <div className="bg-[var(--bg-surface)] border border-[var(--border-main)] rounded-[3rem] p-10 shadow-2xl flex flex-col">
-           <div className="flex items-center justify-between mb-8">
-              <h3 className="text-2xl font-black text-[var(--text-main)] flex items-center gap-4 tracking-tighter uppercase"><Clock className="text-[var(--primary)] shrink-0" size={32} />Staff Audit Logs</h3>
-              <button 
-                onClick={() => showToast("Full logs exported to CSV.", "success")}
-                className="text-[9px] font-black text-[var(--primary)] hover:underline uppercase tracking-widest"
-              >
-                Export Audit
-              </button>
-           </div>
-           <div className="flex flex-col gap-4 overflow-y-auto max-h-[350px] pr-2 scrollbar-hide">
-              {transfers.length > 0 ? transfers.slice(0, 5).map((tx, i) => (
-                <div key={i} className="bg-[var(--bg-main)] p-5 rounded-2xl border border-[var(--border-main)] shadow-sm flex flex-col gap-2 group hover:shadow-md transition-all">
-                   <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-black text-[var(--primary)]">System</span>
-                      <span className="text-[8px] font-mono text-[var(--text-muted)]">{tx.id}</span>
-                   </div>
-                   <p className="text-[11px] font-black text-[var(--text-main)] uppercase tracking-tight">Transfer: {tx.file}</p>
-                   <span className="text-[9px] italic text-[var(--text-muted)]">Size: {tx.size} • Status: {tx.status}</span>
-                </div>
-              )) : (
-                <div className="py-12 border-2 border-dashed border-[var(--border-main)] rounded-3xl flex flex-col items-center justify-center text-[var(--text-muted)] gap-3">
-                   <Clock size={32} className="opacity-20" />
-                   <p className="text-xs font-bold uppercase tracking-widest">No Audit Logs Yet</p>
-                </div>
-              )}
            </div>
         </div>
       </div>
@@ -386,28 +334,30 @@ export default function AdminDashboardView({ showToast }) {
           <table className="w-full text-left border-collapse whitespace-nowrap responsive-table-grid">
             <thead>
               <tr className="border-b border-[var(--border-main)] text-[10px] font-black uppercase tracking-[0.2em] text-[var(--text-muted)]">
-                <th className="p-6 pl-8">Tx ID / File</th>
-                <th className="p-6">Size</th>
-                <th className="p-6">Progress</th>
-                <th className="p-6 pr-8 text-right">Intercept</th>
+                <th className="p-6 pl-8 w-[40%]">Tx ID / File</th>
+                <th className="p-6 w-[20%]">Size</th>
+                <th className="p-6 w-[25%]">Progress</th>
+                <th className="p-6 pr-8 w-[15%] text-right">Intercept</th>
               </tr>
             </thead>
             <tbody className="text-sm font-medium">
               {transfers.length > 0 ? transfers.map((tx) => (
                 <tr key={tx.id} className="border-b border-[var(--border-main)] hover:bg-[var(--bg-hover)] transition-colors last:border-0">
-                  <td className="p-6 pl-8" data-label="Identity">
-                     <p className="font-bold text-[var(--text-main)]">{tx.file}</p>
-                     <p className="text-[10px] text-[var(--text-muted)] mt-1 font-mono uppercase">{tx.id}</p>
+                  <td className="p-6 pl-8 w-[40%]" data-label="Identity">
+                     <p className="font-bold text-[var(--text-main)] truncate max-w-[200px] sm:max-w-xs">{tx.file}</p>
+                     <p className="text-[10px] text-[var(--text-muted)] mt-1 font-mono uppercase truncate">{tx.id}</p>
                   </td>
-                  <td className="p-6 font-mono text-[var(--text-muted)] font-bold" data-label="Size">{tx.size}</td>
-                  <td className="p-6" data-label="State">
+                  <td className="p-6 w-[20%] font-mono text-[var(--text-muted)] font-bold" data-label="Size">{tx.size}</td>
+                  <td className="p-6 w-[25%]" data-label="State">
                      <div className="flex flex-col gap-1 items-end md:items-start">
-                       <span className="font-mono text-xs font-bold text-[var(--text-main)]">{tx.speed}</span>
+                       <span className="font-mono text-xs font-bold text-[var(--text-main)]">{tx.status === 'Complete' ? '0 MB/s' : tx.speed}</span>
                        <span className="text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-wider">{tx.status}</span>
-                       <div className="w-full bg-[var(--bg-surface)] h-1 rounded-full mt-1"><div className="bg-[var(--accent)] h-full rounded-full" style={{width: tx.progress || '50%'}}></div></div>
+                       <div className="w-full bg-[var(--bg-surface)] h-1.5 rounded-full mt-1 overflow-hidden">
+                         <div className="bg-[var(--accent)] h-full rounded-full transition-all duration-500" style={{width: tx.status === 'Complete' ? '100%' : (tx.progress || '0%')}}></div>
+                       </div>
                      </div>
                   </td>
-                  <td className="p-6 pr-8 text-right" data-label="Control">
+                  <td className="p-6 pr-8 w-[15%] text-right" data-label="Control">
                      <button onClick={() => handleIntercept(tx.id)} className="p-2.5 bg-[var(--danger-10)] text-[var(--danger)] hover:bg-[var(--danger)] hover:text-white rounded-xl transition-all shadow-sm active:scale-95 border border-[var(--danger-20)]"><X size={16}/></button>
                   </td>
                 </tr>
@@ -429,17 +379,17 @@ export default function AdminDashboardView({ showToast }) {
         
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 mb-16">
            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-              <NeuralStat icon={<Microscope size={24}/>} val={threatScore} label="Threat Score" color="text-[var(--success)]" />
+              <NeuralStat icon={<Microscope size={24}/>} val={0} label="Threat Score" color="text-[var(--success)]" />
               <NeuralStat icon={<ShieldHalf size={24}/>} val={`${transfers.length}`} label="Transfers" color="text-[var(--warning)]" />
               <NeuralStat icon={<Activity size={24}/>} val={metrics.health} label="Health" color="text-[var(--success)]" />
            </div>
            <div className="h-full min-h-[200px] bg-[var(--bg-main)] rounded-3xl border border-[var(--border-main)] p-6 relative overflow-hidden flex flex-col justify-center">
-              <p className="text-[8px] font-black uppercase tracking-[0.4em] text-[var(--text-muted)] absolute top-4 left-6">Anomality Heatmap</p>
-              <div className="flex gap-2 h-24 items-end justify-center">
-                 {[...Array(24)].map((_, i) => (
-                   <div key={i} className={`w-1.5 rounded-t-full transition-all duration-1000 ${i % 7 === 0 ? 'bg-[var(--danger)] h-20 animate-pulse' : i % 5 === 0 ? 'bg-[var(--warning)] h-12' : 'bg-[var(--primary-30)] h-6'}`} style={{animationDelay: `${i * 50}ms`}}></div>
-                 ))}
-              </div>
+               <p className="text-[8px] font-black uppercase tracking-[0.4em] text-[var(--text-muted)] absolute top-4 left-6 z-10">Anomality Heatmap</p>
+               <div className="flex gap-2 h-24 items-end justify-center z-0">
+                  {heatmap.map((val, i) => (
+                    <div key={i} className={`w-1.5 rounded-t-full transition-all duration-700 ease-in-out ${val > 80 ? 'bg-[var(--danger)] shadow-[0_0_8px_var(--danger)]' : val > 45 ? 'bg-[var(--warning)]' : 'bg-[var(--primary-40)]'}`} style={{height: `${Math.max(5, val)}%`}}></div>
+                  ))}
+               </div>
            </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -477,13 +427,13 @@ function AdminVarInput({ label, value, onChange, icon }) {
 
 function AdminDefenseCard({ title, desc, enabled, onChange, danger, icon }) {
   return (
-    <div className={`flex flex-col justify-between w-full bg-[var(--bg-main)] border p-6 rounded-[2rem] shadow-sm transition-all ${enabled ? (danger ? 'border-[var(--danger-30)] bg-[var(--danger-10)]/10' : 'border-[var(--primary-30)] bg-[var(--primary-10)]/10') : 'border-[var(--border-main)]'}`}>
+    <div className={`flex flex-col justify-between w-full bg-[var(--bg-main)] border p-5 rounded-[1.5rem] sm:rounded-[2rem] shadow-sm transition-all ${enabled ? (danger ? 'border-[var(--danger-30)] bg-[var(--danger-10)]/10' : 'border-[var(--primary-30)] bg-[var(--primary-10)]/10') : 'border-[var(--border-main)]'}`}>
       <div className="mb-4">
-        <div className={`flex items-center gap-3 mb-3 ${danger && enabled ? 'text-[var(--danger)]' : enabled ? 'text-[var(--primary)]' : 'text-[var(--text-muted)]'}`}>{icon} <span className="font-black uppercase tracking-widest text-xs">{title}</span></div>
-        <p className="text-[10px] font-bold text-[var(--text-muted)] leading-relaxed">{desc}</p>
+        <div className={`flex items-center gap-2 mb-2 ${danger && enabled ? 'text-[var(--danger)]' : enabled ? 'text-[var(--primary)]' : 'text-[var(--text-muted)]'}`}>{icon} <span className="font-black uppercase tracking-widest text-[10px] sm:text-xs whitespace-nowrap">{title}</span></div>
+        <p className="text-[9px] sm:text-[10px] font-bold text-[var(--text-muted)] leading-relaxed">{desc}</p>
       </div>
-      <button onClick={() => onChange(!enabled)} className={`w-14 h-8 rounded-full p-1 transition-all duration-300 relative shadow-inner ${enabled ? (danger ? 'bg-[var(--danger)]' : 'bg-[var(--primary)]') : 'bg-[var(--border-main)]'}`}>
-        <div className={`w-6 h-6 rounded-full bg-white shadow-xl transition-all duration-300 ${enabled ? 'translate-x-6' : 'translate-x-0'}`}></div>
+      <button onClick={() => onChange(!enabled)} className={`w-12 h-6 rounded-full p-0.5 transition-all duration-300 relative shadow-inner shrink-0 ${enabled ? (danger ? 'bg-[var(--danger)]' : 'bg-[var(--primary)]') : 'bg-[var(--border-main)]'}`}>
+        <div className={`w-5 h-5 rounded-full bg-white shadow-xl transition-all duration-300 ${enabled ? 'translate-x-6' : 'translate-x-0'}`}></div>
       </button>
     </div>
   );
@@ -491,10 +441,10 @@ function AdminDefenseCard({ title, desc, enabled, onChange, danger, icon }) {
 
 function NeuralStat({ icon, val, label, color }) {
   return (
-    <div className="bg-[var(--bg-main)] border border-[var(--border-main)] rounded-[2rem] p-8 shadow-inner flex flex-col items-center">
-      <div className={`mb-4 ${color}`}>{icon}</div>
-      <h4 className="text-4xl font-black tracking-tighter mb-1 text-[var(--text-main)]">{val}<span className="text-xl text-[var(--text-muted)]">{typeof val === 'number' && '/100'}</span></h4>
-      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--text-muted)]">{label}</p>
+    <div className="bg-[var(--bg-main)] border border-[var(--border-main)] rounded-[1.5rem] sm:rounded-[2rem] p-4 sm:p-5 shadow-inner flex flex-col items-center justify-center text-center">
+      <div className={`mb-3 ${color}`}>{icon}</div>
+      <h4 className="text-2xl sm:text-3xl font-black tracking-tighter mb-1 text-[var(--text-main)] whitespace-nowrap">{val}<span className="text-sm sm:text-base text-[var(--text-muted)]">{typeof val === 'number' && '/100'}</span></h4>
+      <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.1em] text-[var(--text-muted)] leading-tight">{label}</p>
     </div>
   );
 }
