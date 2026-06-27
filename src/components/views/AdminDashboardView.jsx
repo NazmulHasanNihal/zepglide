@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   RefreshCw, Megaphone, Send, CheckCircle2, Sliders, HardDrive, Activity, 
   Database, Clock, Settings, Pause, UserPlus, ShieldCheck, FileWarning, Brain, Microscope, ShieldHalf, Fingerprint, Zap, X,
-  Radar, PieChart, MonitorDown, Globe
+  Radar, PieChart, MonitorDown, Globe, DatabaseZap, User
 } from 'lucide-react';
 import { useSound } from '../../hooks/useSound';
 import { supabase } from '../../lib/supabase';

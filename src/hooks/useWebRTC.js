@@ -179,7 +179,7 @@ export function useWebRTC() {
         };
 
         if (isInitiator) {
-            const dc = pc.createDataChannel('zepglide-transfer', { ordered: true, maxRetransmits: 30 });
+            const dc = pc.createDataChannel('zepglide-transfer', { ordered: true });
             setupDataChannel(dc, targetId);
         } else {
             pc.ondatachannel = (event) => {
