@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Dashboard from './components/Dashboard';
 import AuthModal from './components/modals/AuthModal';
+import { io } from 'socket.io-client';
+import { Analytics } from "@vercel/analytics/react";
 
 const THEMES = {
   ocean: {
@@ -140,10 +142,21 @@ export default function App() {
 
   const [appToasts, setAppToasts] = useState([]);
   const showAppToast = useCallback((message, type = 'success') => {
-    const id = Date.now();
+    const id = Date.now() + Math.random();
     setAppToasts(prev => [...prev, { id, message, type }]);
-    setTimeout(() => setAppToasts(prev => prev.filter(t => t.id !== id)), 4000);
+    setTimeout(() => setAppToasts(prev => prev.filter(t => t.id !== id)), 6000);
   }, []);
+
+  useEffect(() => {
+    const SIGNAL_URL = import.meta.env.VITE_SIGNAL_URL || import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : 'http://localhost:3001');
+    const socket = io(SIGNAL_URL, { transports: ['websocket', 'polling'] });
+
+    socket.on('global-broadcast', (data) => {
+       showAppToast(`BROADCAST: ${data.message}`, 'info');
+    });
+
+    return () => socket.close();
+  }, [showAppToast]);
 
   return (
     <div className={isDarkMode ? 'dark' : ''} style={customStyles}>
@@ -177,6 +190,7 @@ export default function App() {
           </div>
         ))}
       </div>
+      <Analytics />
     </div>
   );
 }

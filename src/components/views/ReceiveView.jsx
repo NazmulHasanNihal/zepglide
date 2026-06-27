@@ -7,7 +7,7 @@ export default function ReceiveView({ showToast, playSfx }) {
   const [pin, setPin] = useState('');
   const [password, setPassword] = useState('');
   const [isScanning, setIsScanning] = useState(false);
-  const { status, progress, speed, eta, metadata, receivedFile, errorMsg, joinSession, cancelTransfer, retryTransfer, isSocketConnected } = useWebRTC();
+  const { status, progress, speed, eta, metadata, receivedFile, errorMsg, joinSession, cancelTransfer, retryTransfer, isSocketConnected, fingerprint } = useWebRTC();
   
   const facts = ["Bypassing Symmetric NAT...", "Establishing Quantum-Safe Keys...", "Securing P2P WebRTC Layer...", "Discovering Mesh Route..."];
   const [factIndex, setFactIndex] = useState(0);
@@ -96,6 +96,16 @@ export default function ReceiveView({ showToast, playSfx }) {
                    {status === 'connecting' ? facts[factIndex] : 'Secure Channel Bonded'}
                  </p>
               </div>
+
+              {fingerprint && (
+               <div className="mt-6 p-3 bg-[var(--success-10)] border border-[var(--success-20)] rounded-xl flex items-start gap-3 w-full text-left">
+                 <Lock size={16} className="text-[var(--success)] shrink-0 mt-0.5" />
+                 <div className="flex flex-col overflow-hidden">
+                   <span className="text-[10px] font-black uppercase tracking-widest text-[var(--success)] mb-1">E2EE Verified</span>
+                   <span className="text-[9px] font-mono text-[var(--text-muted)] truncate">{fingerprint}</span>
+                 </div>
+               </div>
+              )}
            </div>
         ) : status === 'firewall_blocked' ? (
            <div className="flex flex-col items-center py-6 w-full animate-in slide-in-from-bottom-8 duration-500 bg-[var(--warning-10)] p-6 rounded-3xl border border-[var(--warning-30)] text-center">

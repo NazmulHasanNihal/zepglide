@@ -9,13 +9,14 @@ import { useSound } from '../../hooks/useSound';
 import { supabase } from '../../lib/supabase';
 
 export default function AdminDashboardView({ showToast }) {
-  const [ddosMode, setDdosMode] = useState(false);
-  const [maintenanceMode, setMaintenanceMode] = useState(false);
-  const [allowRegistrations, setAllowRegistrations] = useState(true);
-  const [forceE2ee, setForceE2ee] = useState(false);
-  const [quantumSafe, setQuantumSafe] = useState(true);
-  const [zeroTrust, setZeroTrust] = useState(true);
-  const [autoIsolate, setAutoIsolate] = useState(true);
+  const [config, setConfig] = useState({
+    max_transfer_size: '50', global_rate_limit: '15000', default_node_alloc: '2', session_timeout: '120',
+    maintenance_mode: false, allow_registrations: true, force_e2ee: false,
+    quantum_safe: true, zero_trust: true, auto_isolate: true,
+    p2p_priority: '94%', relay_throttling: '12%', ingress_buffer: '512ms', burst_multiplier: '1.8x',
+    blacklisted_regions: []
+  });
+
   const [threatScore] = useState(14); 
   const { playSfx } = useSound();
 
@@ -55,6 +56,29 @@ export default function AdminDashboardView({ showToast }) {
         const txRes = await fetch((import.meta.env.VITE_API_URL || '') + '/api/admin/transfers', { headers });
         const txData = await txRes.json();
         if (Array.isArray(txData)) setTransfers(txData);
+
+        // Fetch Config
+        const configRes = await fetch((import.meta.env.VITE_API_URL || '') + '/api/admin/config', { headers });
+        const configData = await configRes.json();
+        if (configData.id) {
+           setConfig({
+             max_transfer_size: configData.max_transfer_size || '50',
+             global_rate_limit: configData.global_rate_limit || '15000',
+             default_node_alloc: configData.default_node_alloc || '2',
+             session_timeout: configData.session_timeout || '120',
+             maintenance_mode: configData.maintenance_mode || false,
+             allow_registrations: configData.allow_registrations || true,
+             force_e2ee: configData.force_e2ee || false,
+             quantum_safe: configData.quantum_safe || true,
+             zero_trust: configData.zero_trust || true,
+             auto_isolate: configData.auto_isolate || true,
+             p2p_priority: configData.p2p_priority || '94%',
+             relay_throttling: configData.relay_throttling || '12%',
+             ingress_buffer: configData.ingress_buffer || '512ms',
+             burst_multiplier: configData.burst_multiplier || '1.8x',
+             blacklisted_regions: configData.blacklisted_regions || []
+           });
+        }
       } catch (err) {
         console.error("Failed to fetch admin data", err);
       }
@@ -64,7 +88,20 @@ export default function AdminDashboardView({ showToast }) {
 
   const [staffSessions, setStaffSessions] = useState([]);
 
-  const [blacklistedRegions, setBlacklistedRegions] = useState([]);
+  const handleConfigUpdate = async (updates) => {
+    const newConfig = { ...config, ...updates };
+    setConfig(newConfig);
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        await fetch((import.meta.env.VITE_API_URL || '') + '/api/admin/config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+          body: JSON.stringify(updates)
+        });
+    } catch (e) {
+        console.error(e);
+    }
+  };
 
   const handleRevokeSession = (id) => {
     setStaffSessions(prev => prev.filter(s => s.id !== id));
@@ -73,10 +110,14 @@ export default function AdminDashboardView({ showToast }) {
   };
 
   const toggleRegionBlock = (region) => {
-    setBlacklistedRegions(prev => 
-      prev.includes(region) ? prev.filter(r => r !== region) : [...prev, region]
-    );
-    const isBlocked = !blacklistedRegions.includes(region);
+    const currentRegions = config.blacklisted_regions || [];
+    const newRegions = currentRegions.includes(region) 
+      ? currentRegions.filter(r => r !== region) 
+      : [...currentRegions, region];
+    
+    handleConfigUpdate({ blacklisted_regions: newRegions });
+    
+    const isBlocked = !currentRegions.includes(region);
     playSfx(isBlocked ? 'warning' : 'success');
     showToast(`${region} cluster ${isBlocked ? 'restricted' : 'restored'}.`, isBlocked ? "primary" : "success");
   };
@@ -87,41 +128,53 @@ export default function AdminDashboardView({ showToast }) {
     showToast(`Transfer ${id} intercepted and killed.`, "primary");
   };
 
-  const handleToggleUserStatus = (id) => {
-    setUsers(prev => prev.map(u => {
-       if (u.id === id) {
-          const newStatus = u.status === 'Active' ? 'Suspended' : 'Active';
-          showToast(`User ${id} status changed to ${newStatus}.`, newStatus === 'Active' ? "success" : "primary");
-          return { ...u, status: newStatus };
-       }
-       return u;
-    }));
+  const handleToggleUserStatus = async (id, currentStatus) => {
+    const newStatus = currentStatus === 'Active' ? 'Suspended' : 'Active';
+    setUsers(prev => prev.map(u => u.id === id ? { ...u, status: newStatus } : u));
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        await fetch((import.meta.env.VITE_API_URL || '') + `/api/admin/users/${id}/status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+          body: JSON.stringify({ status: newStatus })
+        });
+        showToast(`User ${id} status changed to ${newStatus}.`, newStatus === 'Active' ? "success" : "primary");
+    } catch(e) { console.error(e); }
   };
 
-  const handleBroadcast = () => { 
+  const handleBroadcast = async () => { 
     if (!broadcastMsg.trim()) return; 
     setBroadcastStatus('sending'); 
-    setTimeout(() => { 
-      setBroadcastStatus('sent'); 
-      showToast("System broadcast dispatched globally.", "success");
-      setBroadcastMsg(''); 
-      setTimeout(() => setBroadcastStatus('idle'), 3000); 
-    }, 1500); 
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        await fetch((import.meta.env.VITE_API_URL || '') + '/api/admin/broadcast', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+          body: JSON.stringify({ message: broadcastMsg })
+        });
+        setBroadcastStatus('sent'); 
+        showToast("System broadcast dispatched globally.", "success");
+        setBroadcastMsg(''); 
+        setTimeout(() => setBroadcastStatus('idle'), 3000); 
+    } catch(e) {
+        setBroadcastStatus('idle');
+        showToast("Broadcast failed", "error");
+    }
   };
 
   return (
     <div className="flex flex-col gap-10 w-full max-w-5xl mx-auto mt-2 pb-12 animate-in fade-in duration-700">
       
       {/* 1. Status Bar */}
-      <div className={`rounded-[2.5rem] p-8 flex flex-col md:flex-row items-center justify-between shadow-2xl transition-all duration-700 border-2 gap-6 ${ddosMode || maintenanceMode ? 'bg-[var(--danger-10)] border-[var(--danger)]' : trafficSpike ? 'bg-[var(--warning-10)] border-[var(--warning)]' : 'bg-[var(--bg-surface)] border-[var(--border-main)]'}`}>
+      <div className={`rounded-[2.5rem] p-8 flex flex-col md:flex-row items-center justify-between shadow-2xl transition-all duration-700 border-2 gap-6 ${config.maintenance_mode ? 'bg-[var(--danger-10)] border-[var(--danger)]' : trafficSpike ? 'bg-[var(--warning-10)] border-[var(--warning)]' : 'bg-[var(--bg-surface)] border-[var(--border-main)]'}`}>
         <div className="flex items-center gap-6">
           <div className="relative flex h-8 w-8">
-            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${ddosMode || maintenanceMode ? 'bg-[var(--danger)]' : trafficSpike ? 'bg-[var(--warning)] duration-75' : 'bg-[var(--success)]'}`}></span>
-            <span className={`relative inline-flex rounded-full h-8 w-8 ${ddosMode || maintenanceMode ? 'bg-[var(--danger)]' : trafficSpike ? 'bg-[var(--warning)]' : 'bg-[var(--success)]'}`}></span>
+            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${config.maintenance_mode ? 'bg-[var(--danger)]' : trafficSpike ? 'bg-[var(--warning)] duration-75' : 'bg-[var(--success)]'}`}></span>
+            <span className={`relative inline-flex rounded-full h-8 w-8 ${config.maintenance_mode ? 'bg-[var(--danger)]' : trafficSpike ? 'bg-[var(--warning)]' : 'bg-[var(--success)]'}`}></span>
           </div>
           <div>
-            <h4 className={`text-2xl font-black tracking-tighter uppercase ${ddosMode || maintenanceMode ? 'text-[var(--danger)]' : trafficSpike ? 'text-[var(--warning)]' : 'text-[var(--text-main)]'}`}>
-              System: {maintenanceMode ? 'MAINTENANCE' : ddosMode ? 'SHIELDED' : trafficSpike ? 'HIGH LOAD' : 'NOMINAL'}
+            <h4 className={`text-2xl font-black tracking-tighter uppercase ${config.maintenance_mode ? 'text-[var(--danger)]' : trafficSpike ? 'text-[var(--warning)]' : 'text-[var(--text-main)]'}`}>
+              System: {config.maintenance_mode ? 'MAINTENANCE' : trafficSpike ? 'HIGH LOAD' : 'NOMINAL'}
             </h4>
             <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[var(--text-muted)] mt-2">Core routing clusters active.</p>
           </div>
@@ -131,7 +184,7 @@ export default function AdminDashboardView({ showToast }) {
              Test Load
            </button>
            <div className={`px-5 py-3 rounded-xl border-2 font-mono text-lg font-black shadow-inner flex-1 md:flex-initial text-center transition-all duration-500 ${trafficSpike ? 'bg-[var(--warning-10)] border-[var(--warning)] text-[var(--warning)] scale-105' : 'bg-[var(--bg-main)] border-[var(--border-main)] text-[var(--text-main)]'}`}>
-             {trafficSpike ? '84,291 req/s' : ddosMode ? '14,892 req/s' : metrics.trafficRate}
+             {trafficSpike ? '84,291 req/s' : metrics.trafficRate}
            </div>
         </div>
       </div>
@@ -156,10 +209,10 @@ export default function AdminDashboardView({ showToast }) {
       <div className="bg-[var(--bg-surface)] border border-[var(--border-main)] rounded-[3rem] p-10 md:p-14 shadow-2xl relative overflow-hidden">
         <h3 className="text-3xl font-black text-[var(--text-main)] flex items-center gap-4 tracking-tighter uppercase mb-10"><Sliders className="text-[var(--primary)] shrink-0" size={36} />System Editor</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-           <AdminVarInput label="Max Transfer Size (GB)" defaultValue="50" icon={<HardDrive size={16}/>} />
-           <AdminVarInput label="Global Rate Limit (req/s)" defaultValue="15000" icon={<Activity size={16}/>} />
-           <AdminVarInput label="Default Node Allocation (GB)" defaultValue="2" icon={<Database size={16}/>} />
-           <AdminVarInput label="Session Timeout (mins)" defaultValue="120" icon={<Clock size={16}/>} />
+           <AdminVarInput label="Max Transfer Size (GB)" value={config.max_transfer_size} onChange={(v) => handleConfigUpdate({max_transfer_size: v})} icon={<HardDrive size={16}/>} />
+           <AdminVarInput label="Global Rate Limit (req/s)" value={config.global_rate_limit} onChange={(v) => handleConfigUpdate({global_rate_limit: v})} icon={<Activity size={16}/>} />
+           <AdminVarInput label="Default Node Allocation (GB)" value={config.default_node_alloc} onChange={(v) => handleConfigUpdate({default_node_alloc: v})} icon={<Database size={16}/>} />
+           <AdminVarInput label="Session Timeout (mins)" value={config.session_timeout} onChange={(v) => handleConfigUpdate({session_timeout: v})} icon={<Clock size={16}/>} />
         </div>
         <div className="mt-8 flex justify-end">
            <button onClick={() => { playSfx('success'); showToast("System variables saved.", "success"); }} className="px-8 py-3 bg-[var(--primary)] text-[var(--primary-content)] rounded-xl font-black text-xs uppercase tracking-widest hover:brightness-110 transition-all active:scale-95 shadow-md shadow-[var(--primary-20)]">Save Variables</button>
@@ -170,9 +223,9 @@ export default function AdminDashboardView({ showToast }) {
       <div className="bg-[var(--bg-surface)] border border-[var(--border-main)] rounded-[3rem] p-10 md:p-14 shadow-2xl relative overflow-hidden text-[var(--text-main)]">
         <h3 className="text-3xl font-black text-[var(--text-main)] flex items-center gap-4 tracking-tighter uppercase mb-10"><Settings className="text-[var(--primary)] shrink-0" size={36} />Platform Config</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-           <AdminDefenseCard title="Maintenance" desc="Suspend traffic UI." enabled={maintenanceMode} onChange={setMaintenanceMode} danger icon={<Pause size={24}/>} />
-           <AdminDefenseCard title="Registrations" desc="Allow new nodes." enabled={allowRegistrations} onChange={setAllowRegistrations} icon={<UserPlus size={24}/>} />
-           <AdminDefenseCard title="Force E2EE" desc="Reject unverified UI." enabled={forceE2ee} onChange={setForceE2ee} icon={<ShieldCheck size={24}/>} />
+           <AdminDefenseCard title="Maintenance" desc="Suspend traffic UI." enabled={config.maintenance_mode} onChange={(v) => handleConfigUpdate({maintenance_mode: v})} danger icon={<Pause size={24}/>} />
+           <AdminDefenseCard title="Registrations" desc="Allow new nodes." enabled={config.allow_registrations} onChange={(v) => handleConfigUpdate({allow_registrations: v})} icon={<UserPlus size={24}/>} />
+           <AdminDefenseCard title="Force E2EE" desc="Reject unverified UI." enabled={config.force_e2ee} onChange={(v) => handleConfigUpdate({force_e2ee: v})} icon={<ShieldCheck size={24}/>} />
         </div>
       </div>
 
@@ -186,19 +239,22 @@ export default function AdminDashboardView({ showToast }) {
                  <circle cx="400" cy="200" r="100" stroke="var(--primary)" strokeWidth="0.5" />
               </svg>
             <div className="absolute inset-0 grid grid-cols-3 grid-rows-2 p-6 gap-6">
-                {['North Am', 'Europe', 'Asia', 'South Am', 'Africa', 'Oceania'].map(region => (
+                {['North Am', 'Europe', 'Asia', 'South Am', 'Africa', 'Oceania'].map(region => {
+                  const isBlocked = config.blacklisted_regions?.includes(region);
+                  return (
                   <button 
                     key={region} 
                     onClick={() => toggleRegionBlock(region)}
-                    className={`group relative flex flex-col items-center justify-center bg-[var(--bg-surface)]/40 border rounded-2xl transition-all p-4 active:scale-95 ${blacklistedRegions.includes(region) ? 'border-[var(--danger)] bg-[var(--danger-10)]/20' : 'border-[var(--border-main)] hover:border-[var(--primary)]'}`}
+                    className={`group relative flex flex-col items-center justify-center bg-[var(--bg-surface)]/40 border rounded-2xl transition-all p-4 active:scale-95 ${isBlocked ? 'border-[var(--danger)] bg-[var(--danger-10)]/20' : 'border-[var(--border-main)] hover:border-[var(--primary)]'}`}
                   >
-                        <span className={`text-[9px] font-black uppercase tracking-widest ${blacklistedRegions.includes(region) ? 'text-[var(--danger)]' : 'text-[var(--text-muted)] group-hover:text-[var(--primary)]'}`}>{region}</span>
-                        <span className={`text-[8px] font-bold mt-1 ${blacklistedRegions.includes(region) ? 'text-[var(--danger)]' : 'text-[var(--success)]'}`}>
-                          {blacklistedRegions.includes(region) ? 'RESTRICTED' : 'ACTIVE'}
+                        <span className={`text-[9px] font-black uppercase tracking-widest ${isBlocked ? 'text-[var(--danger)]' : 'text-[var(--text-muted)] group-hover:text-[var(--primary)]'}`}>{region}</span>
+                        <span className={`text-[8px] font-bold mt-1 ${isBlocked ? 'text-[var(--danger)]' : 'text-[var(--success)]'}`}>
+                          {isBlocked ? 'RESTRICTED' : 'ACTIVE'}
                         </span>
-                        <div className={`absolute top-2 right-2 w-2 h-2 rounded-full ${blacklistedRegions.includes(region) ? 'bg-[var(--danger)]' : 'bg-[var(--success)] animate-pulse'}`}></div>
+                        <div className={`absolute top-2 right-2 w-2 h-2 rounded-full ${isBlocked ? 'bg-[var(--danger)]' : 'bg-[var(--success)] animate-pulse'}`}></div>
                   </button>
-                ))}
+                  );
+                })}
             </div>
            </div>
            <div className="mt-6 flex justify-between items-center bg-[var(--bg-main)] p-4 rounded-xl border border-[var(--border-main)]">
@@ -214,12 +270,12 @@ export default function AdminDashboardView({ showToast }) {
 
         <div className="bg-[var(--bg-surface)] border border-[var(--border-main)] rounded-[3rem] p-8 md:p-10 shadow-2xl flex flex-col gap-8">
            <h3 className="text-2xl font-black text-[var(--text-main)] flex items-center gap-4 tracking-tighter uppercase mb-2"><Sliders className="text-[var(--accent)] shrink-0" size={28} />Traffic Shaper</h3>
-           <div className="flex flex-col gap-8">
-              <ShaperSlider label="P2P Priority" val="94%" icon={<Zap size={14}/>} />
-              <ShaperSlider label="Relay Throttling" val="12%" icon={<DatabaseZap size={14}/>} />
-              <ShaperSlider label="Ingress Buffer" val="512ms" icon={<Clock size={14}/>} />
-              <ShaperSlider label="Burst Multiplier" val="1.8x" icon={<Activity size={14}/>} />
-           </div>
+            <div className="flex flex-col gap-8">
+               <ShaperSlider label="P2P Priority" val={config.p2p_priority} onChange={(v) => handleConfigUpdate({p2p_priority: v})} icon={<Zap size={14}/>} />
+               <ShaperSlider label="Relay Throttling" val={config.relay_throttling} onChange={(v) => handleConfigUpdate({relay_throttling: v})} icon={<DatabaseZap size={14}/>} />
+               <ShaperSlider label="Ingress Buffer" val={config.ingress_buffer} onChange={(v) => handleConfigUpdate({ingress_buffer: v})} icon={<Clock size={14}/>} />
+               <ShaperSlider label="Burst Multiplier" val={config.burst_multiplier} onChange={(v) => handleConfigUpdate({burst_multiplier: v})} icon={<Activity size={14}/>} />
+            </div>
            <button 
              onClick={() => showToast("Traffic weights recalculated.", "primary")}
              className="w-full py-4 mt-2 bg-[var(--bg-main)] border border-[var(--border-main)] hover:border-[var(--primary)] text-[var(--text-main)] rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all shadow-sm active:scale-95"
@@ -348,6 +404,7 @@ export default function AdminDashboardView({ showToast }) {
                      <div className="flex flex-col gap-1 items-end md:items-start">
                        <span className="font-mono text-xs font-bold text-[var(--text-main)]">{tx.speed}</span>
                        <span className="text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-wider">{tx.status}</span>
+                       <div className="w-full bg-[var(--bg-surface)] h-1 rounded-full mt-1"><div className="bg-[var(--accent)] h-full rounded-full" style={{width: tx.progress || '50%'}}></div></div>
                      </div>
                   </td>
                   <td className="p-6 pr-8 text-right" data-label="Control">
@@ -362,7 +419,7 @@ export default function AdminDashboardView({ showToast }) {
         </div>
       </div>
 
-      {/* 6. Neural Overwatch */}
+      {/* 8. Neural Overwatch */}
       <div className="bg-[var(--bg-surface)] border-2 border-[var(--accent-30)] rounded-[3rem] p-10 md:p-14 shadow-2xl relative overflow-hidden text-[var(--text-main)]">
         <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-[var(--primary)] via-[var(--accent)] to-[var(--primary)]"></div>
         <div className="flex flex-col md:flex-row md:items-center justify-between mb-16 gap-4">
@@ -386,13 +443,13 @@ export default function AdminDashboardView({ showToast }) {
            </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-           <AdminDefenseCard title="Quantum Keys" desc="Use Kyber PQC." enabled={quantumSafe} onChange={setQuantumSafe} icon={<ShieldHalf size={24}/>} />
-           <AdminDefenseCard title="Zero-Trust" desc="Continuous Auth." enabled={zeroTrust} onChange={setZeroTrust} icon={<Fingerprint size={24}/>} />
-           <AdminDefenseCard title="Auto-Isolate" desc="Sever anomalies." enabled={autoIsolate} onChange={setAutoIsolate} danger icon={<Brain size={24}/>} />
+           <AdminDefenseCard title="Quantum Keys" desc="Use Kyber PQC." enabled={config.quantum_safe} onChange={(v) => handleConfigUpdate({quantum_safe: v})} icon={<ShieldHalf size={24}/>} />
+           <AdminDefenseCard title="Zero-Trust" desc="Continuous Auth." enabled={config.zero_trust} onChange={(v) => handleConfigUpdate({zero_trust: v})} icon={<Fingerprint size={24}/>} />
+           <AdminDefenseCard title="Auto-Isolate" desc="Sever anomalies." enabled={config.auto_isolate} onChange={(v) => handleConfigUpdate({auto_isolate: v})} danger icon={<Brain size={24}/>} />
         </div>
       </div>
 
-      {/* 7. Financial Engine */}
+      {/* 9. Financial Engine */}
       <div className="bg-[var(--bg-surface)] border border-[var(--border-main)] rounded-[3rem] p-10 md:p-14 shadow-2xl text-[var(--text-main)]">
          <h3 className="text-3xl font-black text-[var(--text-main)] flex items-center gap-4 tracking-tighter uppercase mb-12"><PieChart className="text-[var(--success)] shrink-0" size={36} />Financial Engine</h3>
          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 mb-12">
@@ -406,13 +463,13 @@ export default function AdminDashboardView({ showToast }) {
   );
 }
 
-function AdminVarInput({ label, defaultValue, icon }) {
+function AdminVarInput({ label, value, onChange, icon }) {
   return (
     <div className="flex flex-col gap-2 w-full">
        <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest pl-1">{label}</label>
        <div className="flex items-center w-full bg-[var(--bg-main)] px-4 py-3 rounded-xl border border-[var(--border-main)] focus-within:border-[var(--primary)] transition-all">
           <div className="text-[var(--primary)] mr-3 shrink-0">{icon}</div>
-          <input defaultValue={defaultValue} className="bg-transparent w-full focus:outline-none text-[var(--text-main)] font-bold text-sm" />
+          <input value={value} onChange={e => onChange && onChange(e.target.value)} className="bg-transparent w-full focus:outline-none text-[var(--text-main)] font-bold text-sm" />
        </div>
     </div>
   );
@@ -452,12 +509,16 @@ function AdminQuickStat({ val, label, trend, color }) {
   );
 }
 
-function ShaperSlider({ label, val, icon }) {
+function ShaperSlider({ label, val, onChange, icon }) {
   return (
     <div className="flex flex-col gap-3">
        <div className="flex justify-between items-center text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">
           <span className="flex items-center gap-2">{icon} {label}</span>
-          <span className="text-[var(--text-main)]">{val}</span>
+          <input 
+            value={val} 
+            onChange={e => onChange(e.target.value)} 
+            className="text-[var(--text-main)] bg-transparent border-none focus:outline-none text-right w-16" 
+          />
        </div>
        <div className="h-1.5 w-full bg-[var(--bg-main)] rounded-full overflow-hidden border border-[var(--border-main)] relative">
           <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-[var(--accent)] to-[var(--primary)] rounded-full" style={{ width: val }}></div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UploadCloud, Video, File as FileIcon, X, ShieldCheck, Zap, RefreshCw, Network, Cpu, Wifi, CheckCircle2, Laptop, Smartphone, Download, Gauge, Activity, Clock, Lock, Users, Copy, Check, Plus } from 'lucide-react';
+import { UploadCloud, Video, File as FileIcon, X, ShieldCheck, Zap, RefreshCw, Network, Cpu, Wifi, CheckCircle2, Laptop, Smartphone, Download, Gauge, Activity, Clock, Lock, Users, Copy, Check, Plus, Pause, Play } from 'lucide-react';
 import { useWebRTC } from '../../hooks/useWebRTC';
 import { supabase } from '../../lib/supabase';
 import { QRCodeSVG } from 'qrcode.react';
@@ -14,7 +14,7 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
   const [isMultiPeer, setIsMultiPeer] = useState(false);
   const [sessionStarted, setSessionStarted] = useState(false);
 
-  const { status, progress, speed, eta, startSession, sendFiles, cancelTransfer, retryTransfer, isSocketConnected } = useWebRTC();
+  const { status, progress, speed, eta, startSession, sendFiles, cancelTransfer, pauseTransfer, resumeTransfer, retryTransfer, isSocketConnected, fingerprint } = useWebRTC();
   const fileInputRef = React.useRef(null);
   const [cancelStep, setCancelStep] = useState(0);
 
@@ -32,12 +32,50 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
     fileInputRef.current?.click();
   };
 
-  const handleFileInputChange = (e) => {
+  const handleFolderClick = () => {
+    folderInputRef.current?.click();
+  };
+
+  const [isZipping, setIsZipping] = useState(false);
+
+  const handleFileInputChange = async (e) => {
     if (e.target.files && e.target.files.length > 0) {
-      addFiles(Array.from(e.target.files));
+      const files = Array.from(e.target.files);
+      
+      const isFolder = files.some(f => f.webkitRelativePath && f.webkitRelativePath.includes('/'));
+      
+      if (isFolder) {
+         setIsZipping(true);
+         showToast("Compressing folder... Please wait.", "info");
+         try {
+             const JSZip = (await import('jszip')).default;
+             const zip = new JSZip();
+             
+             const rootName = files[0].webkitRelativePath.split('/')[0] || 'folder';
+             
+             files.forEach(f => {
+                 // Remove the root folder name from the path so the zip extracts nicely, or keep it.
+                 // Keeping it is fine.
+                 zip.file(f.webkitRelativePath, f);
+             });
+             
+             const zipBlob = await zip.generateAsync({ type: 'blob' });
+             const zipFile = new File([zipBlob], `${rootName}.zip`, { type: 'application/zip' });
+             
+             addFiles([zipFile]);
+             showToast(`Folder compressed into ${rootName}.zip`, "success");
+         } catch (err) {
+             console.error("Zip error:", err);
+             showToast("Failed to compress folder", "error");
+         } finally {
+             setIsZipping(false);
+         }
+      } else {
+         addFiles(files);
+      }
     }
-    // Reset input so the same file can be selected again
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (folderInputRef.current) folderInputRef.current.value = '';
   };
 
   // APPEND files instead of replacing
@@ -197,15 +235,28 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
             className="hidden" 
             multiple
           />
+          <input 
+            type="file" 
+            ref={folderInputRef} 
+            onChange={handleFileInputChange} 
+            className="hidden" 
+            webkitdirectory="true"
+            directory="true"
+            multiple
+          />
+          
           <div className={`h-24 w-24 rounded-[2rem] flex items-center justify-center mb-8 shrink-0 transition-all duration-500 shadow-sm ${dragActive ? 'bg-[var(--primary)] text-[var(--primary-content)] scale-110 shadow-xl' : 'bg-[var(--primary-10)] text-[var(--primary)]'}`}>
-            <UploadCloud size={48} className={dragActive ? 'animate-bounce' : ''} />
+            {isZipping ? <RefreshCw size={48} className="animate-spin" /> : <UploadCloud size={48} className={dragActive ? 'animate-bounce' : ''} />}
           </div>
-          <h3 className="text-2xl md:text-3xl font-black text-[var(--text-main)] mb-3 tracking-tighter uppercase">Drop Files or Click to Browse</h3>
-          <p className="text-xs font-black text-[var(--text-muted)] uppercase tracking-widest mb-10">P2P Encryption Active • Select Multiple Files</p>
+          <h3 className="text-2xl md:text-3xl font-black text-[var(--text-main)] mb-3 tracking-tighter uppercase">{isZipping ? 'Zipping Folder...' : 'Drop Files or Click to Browse'}</h3>
+          <p className="text-xs font-black text-[var(--text-muted)] uppercase tracking-widest mb-10">{isZipping ? 'Please wait while we compress it' : 'P2P Encryption Active • Select Multiple Files'}</p>
           
           <div className="flex flex-wrap justify-center gap-4">
-            <button className="bg-[var(--text-main)] text-[var(--bg-main)] hover:scale-105 active:scale-95 px-8 py-4 rounded-2xl font-black text-xs tracking-widest uppercase transition-all duration-300 shadow-xl flex items-center gap-2" onClick={(e) => { e.stopPropagation(); handleBrowseClick(); }}>
+            <button disabled={isZipping} className="bg-[var(--text-main)] text-[var(--bg-main)] hover:scale-105 active:scale-95 px-8 py-4 rounded-2xl font-black text-xs tracking-widest uppercase transition-all duration-300 shadow-xl flex items-center gap-2 disabled:opacity-50" onClick={(e) => { e.stopPropagation(); handleBrowseClick(); }}>
               <Download size={16} className="rotate-180" /> Select Files
+            </button>
+            <button disabled={isZipping} className="bg-[var(--primary-10)] text-[var(--primary)] hover:bg-[var(--primary)] hover:text-white hover:scale-105 active:scale-95 px-8 py-4 rounded-2xl font-black text-xs tracking-widest uppercase transition-all duration-300 shadow-xl flex items-center gap-2 disabled:opacity-50" onClick={(e) => { e.stopPropagation(); handleFolderClick(); }}>
+              <Download size={16} className="rotate-180" /> Select Folder
             </button>
           </div>
         </div>
@@ -223,10 +274,15 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
             {selectedFiles.map((file, idx) => (
               <div key={idx} className="flex items-center gap-4 overflow-hidden bg-[var(--bg-main)] p-3 rounded-2xl border border-[var(--border-main)] group">
                 <div className={`h-12 w-12 rounded-[1rem] flex items-center justify-center shrink-0 border relative overflow-hidden ${file.isVideo ? 'bg-[var(--accent-10)] text-[var(--accent)] border-[var(--accent-20)]' : 'bg-[var(--primary-10)] text-[var(--primary)] border-[var(--primary-20)]'}`}>
-                  {file.previewUrl && (
-                     <img src={file.previewUrl} alt="preview" className="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-overlay blur-[1px]" />
+                  {file.previewUrl ? (
+                    file.isVideo ? (
+                      <video src={file.previewUrl} className="absolute inset-0 w-full h-full object-cover" muted loop autoPlay playsInline />
+                    ) : (
+                      <img src={file.previewUrl} alt="preview" className="absolute inset-0 w-full h-full object-cover" />
+                    )
+                  ) : (
+                    <div className="relative z-10">{file.isVideo ? <Video size={20} /> : <FileIcon size={20} />}</div>
                   )}
-                  <div className="relative z-10">{file.isVideo ? <Video size={20} /> : <FileIcon size={20} />}</div>
                 </div>
                 <div className="overflow-hidden flex-1">
                   <h3 className="text-sm font-black text-[var(--text-main)] truncate tracking-tighter w-full">{file.name}</h3>
@@ -293,10 +349,15 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
               {selectedFiles.map((file, idx) => (
                 <div key={idx} className="flex items-center gap-4 overflow-hidden bg-[var(--bg-main)] p-3 rounded-2xl border border-[var(--border-main)]">
                   <div className={`h-12 w-12 rounded-[1rem] flex items-center justify-center shrink-0 border relative overflow-hidden ${file.isVideo ? 'bg-[var(--accent-10)] text-[var(--accent)] border-[var(--accent-20)]' : 'bg-[var(--primary-10)] text-[var(--primary)] border-[var(--primary-20)]'}`}>
-                    {file.previewUrl && (
-                       <img src={file.previewUrl} alt="preview" className="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-overlay blur-[1px]" />
+                    {file.previewUrl ? (
+                      file.isVideo ? (
+                        <video src={file.previewUrl} className="absolute inset-0 w-full h-full object-cover" muted loop autoPlay playsInline />
+                      ) : (
+                        <img src={file.previewUrl} alt="preview" className="absolute inset-0 w-full h-full object-cover" />
+                      )
+                    ) : (
+                      <div className="relative z-10">{file.isVideo ? <Video size={20} /> : <FileIcon size={20} />}</div>
                     )}
-                    <div className="relative z-10">{file.isVideo ? <Video size={20} /> : <FileIcon size={20} />}</div>
                   </div>
                   <div className="overflow-hidden flex-1">
                     <h3 className="text-sm font-black text-[var(--text-main)] truncate tracking-tighter w-full">{file.name}</h3>
@@ -310,7 +371,7 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
             )}
           </div>
 
-          {/* Routing engine */}
+          {/* Routing engine & Security */}
           <div className="bg-[var(--bg-main)] rounded-2xl p-4 mb-8 border border-[var(--border-main)] flex flex-col gap-3">
              <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)]">
                 <span>Routing Engine Evaluation</span>
@@ -323,6 +384,16 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
                  <span className="text-[9px] font-bold uppercase tracking-wider text-[var(--bg-surface)] bg-[var(--text-main)] px-2 py-1 rounded flex items-center gap-1"><Network size={12}/> WebTransport Active</span>
                  <span className="text-[9px] font-bold uppercase tracking-wider text-[var(--primary)] bg-[var(--primary-10)] border border-[var(--primary-30)] px-2 py-1 rounded flex items-center gap-1"><Cpu size={12}/> WebGPU Compression: ON</span>
                  <span className="text-[9px] font-bold uppercase tracking-wider text-[var(--accent)] bg-[var(--accent-10)] border border-[var(--accent-30)] px-2 py-1 rounded flex items-center gap-1"><Wifi size={12}/> Multi-Path Aggregation</span>
+               </div>
+             )}
+
+             {fingerprint && (
+               <div className="mt-2 p-3 bg-[var(--success-10)] border border-[var(--success-20)] rounded-xl flex items-start gap-3">
+                 <Lock size={16} className="text-[var(--success)] shrink-0 mt-0.5" />
+                 <div className="flex flex-col overflow-hidden">
+                   <span className="text-[10px] font-black uppercase tracking-widest text-[var(--success)] mb-1">E2EE Verified</span>
+                   <span className="text-[9px] font-mono text-[var(--text-muted)] truncate">{fingerprint}</span>
+                 </div>
                </div>
              )}
           </div>
@@ -456,16 +527,28 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
                     </div>
                   </div>
                   
-                  <button 
-                    onClick={handleCancelClick}
-                    className={`w-full py-4 rounded-2xl font-black text-[10px] tracking-[0.2em] uppercase transition-all duration-300 border ${
-                      cancelStep === 1 
-                      ? 'bg-[var(--danger)] text-white border-[var(--danger)] animate-pulse' 
-                      : 'bg-transparent text-[var(--text-muted)] border-[var(--border-main)] hover:bg-[var(--danger-10)] hover:text-[var(--danger)] hover:border-[var(--danger-20)]'
-                    }`}
-                  >
-                    {cancelStep === 1 ? 'Press Again to Confirm Cancel' : 'Cancel Synchronization'}
-                  </button>
+                  <div className="flex gap-4 mb-4">
+                    <button 
+                      onClick={status === 'paused' ? resumeTransfer : pauseTransfer}
+                      className={`flex-1 py-4 rounded-2xl font-black text-[10px] tracking-[0.2em] uppercase transition-all duration-300 border flex items-center justify-center gap-2 ${
+                        status === 'paused' 
+                        ? 'bg-[var(--success)] text-white border-[var(--success)] hover:brightness-110' 
+                        : 'bg-[var(--warning-10)] text-[var(--warning)] border-[var(--warning-30)] hover:bg-[var(--warning)] hover:text-white'
+                      }`}
+                    >
+                      {status === 'paused' ? <><Play size={16}/> Resume Transfer</> : <><Pause size={16}/> Pause Transfer</>}
+                    </button>
+                    <button 
+                      onClick={handleCancelClick}
+                      className={`flex-1 py-4 rounded-2xl font-black text-[10px] tracking-[0.2em] uppercase transition-all duration-300 border ${
+                        cancelStep === 1 
+                        ? 'bg-[var(--danger)] text-white border-[var(--danger)] animate-pulse' 
+                        : 'bg-transparent text-[var(--text-muted)] border-[var(--border-main)] hover:bg-[var(--danger-10)] hover:text-[var(--danger)] hover:border-[var(--danger-20)]'
+                      }`}
+                    >
+                      {cancelStep === 1 ? 'Press Again to Confirm' : 'Cancel Sync'}
+                    </button>
+                  </div>
                   
                   <div className="flex justify-between items-center mt-2 w-full">
                      <span className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Direct Mesh Active</span>

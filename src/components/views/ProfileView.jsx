@@ -112,6 +112,13 @@ export default function ProfileView({ onLogout, profile, isAdmin, onEditClick, s
 
   const initials = getInitials(profile.name);
 
+  const requiredFields = ['name', 'email', 'bio', 'location', 'website', 'avatar_url'];
+  const filledFieldsCount = requiredFields.filter(field => profile[field] && profile[field] !== 'Loading...' && typeof profile[field] === 'string' && profile[field].trim() !== '').length;
+  const completeness = Math.round((filledFieldsCount / requiredFields.length) * 100);
+
+  const missingFields = requiredFields.filter(field => !profile[field] || profile[field] === 'Loading...' || (typeof profile[field] === 'string' && profile[field].trim() === ''));
+  const nextStep = missingFields.length > 0 ? `Add ${missingFields[0].replace('_url', '')} to increase score` : 'Profile 100% Complete!';
+
   return (
     <div className="flex flex-col gap-8 w-full max-w-5xl mx-auto mt-2 pb-12 animate-in fade-in duration-500">
       <div className="bg-[var(--bg-surface)] border-2 border-[var(--border-main)] hover:shadow-[0_40px_80px_rgba(0,0,0,0.2)] rounded-[3rem] p-8 md:p-12 shadow-2xl relative overflow-hidden transition-all duration-700">
@@ -148,6 +155,18 @@ export default function ProfileView({ onLogout, profile, isAdmin, onEditClick, s
                  </div>
 
                  <p className="text-sm md:text-base font-bold text-[var(--text-muted)] italic max-w-md leading-relaxed opacity-80 decoration-[var(--primary-30)] underline decoration-2 underline-offset-4">"{profile.bio || 'No bio set yet.'}"</p>
+
+                 {/* Profile Completeness Bar */}
+                 <div className="flex flex-col gap-2 mt-2 max-w-md w-full">
+                    <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-[0.2em]">
+                       <span className={completeness === 100 ? "text-[var(--success)]" : "text-[var(--text-muted)]"}>Profile Completeness</span>
+                       <span className={completeness === 100 ? "text-[var(--success)]" : "text-[var(--primary)]"}>{completeness}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-[var(--bg-main)] rounded-full overflow-hidden border border-[var(--border-main)] shadow-inner">
+                       <div className={`h-full rounded-full transition-all duration-1000 ${completeness === 100 ? 'bg-[var(--success)] shadow-[0_0_10px_var(--success-30)]' : 'bg-gradient-to-r from-[var(--primary)] to-[var(--accent)]'}`} style={{ width: `${completeness}%` }}></div>
+                    </div>
+                    <span className="text-[8px] font-bold text-[var(--text-muted)] italic uppercase">{nextStep}</span>
+                 </div>
 
                  <div className="flex flex-col gap-3 mt-4 text-sm font-bold text-[var(--text-muted)] items-center md:items-start">
                     <div className="flex items-center gap-4 group cursor-pointer" onClick={() => handleCopy(profile.email, 'email')}>

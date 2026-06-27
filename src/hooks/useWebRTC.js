@@ -12,6 +12,7 @@ export function useWebRTC() {
     const [metadata, setMetadata] = useState(null);
     const [errorMsg, setErrorMsg] = useState('');
     const [isSocketConnected, setIsSocketConnected] = useState(false);
+    const [fingerprint, setFingerprint] = useState(null);
 
     // Use refs for mutable state that needs to be current inside callbacks
     const socketRef = useRef(null);
@@ -25,6 +26,8 @@ export function useWebRTC() {
     const metadataRef = useRef(null);
     const statusRef = useRef('idle');
     const receivedFileRef = useRef(null);
+    const isPausedRef = useRef(false);
+    const isCancelledRef = useRef(false);
 
     // Keep statusRef in sync
     useEffect(() => { statusRef.current = status; }, [status]);
@@ -42,14 +45,22 @@ export function useWebRTC() {
             const now = Date.now();
             const deltaBytes = transferredBytesRef.current - lastBytesRef.current;
             const deltaSeconds = (now - lastTimeRef.current) / 1000;
+            let currentSpeed = 0;
             if (deltaSeconds > 0) {
-                const currentSpeed = (deltaBytes / (1024 * 1024)) / deltaSeconds;
+                currentSpeed = (deltaBytes / (1024 * 1024)) / deltaSeconds;
                 setSpeed(currentSpeed);
                 const remainingBytes = totalSizeRef.current - transferredBytesRef.current;
                 if (currentSpeed > 0) setEta(Math.round(remainingBytes / (currentSpeed * 1024 * 1024)));
             }
             lastBytesRef.current = transferredBytesRef.current;
             lastTimeRef.current = now;
+
+            if (socketRef.current && socketRef.current.connected) {
+                socketRef.current.emit('telemetry', {
+                    speed: currentSpeed,
+                    progress: totalSizeRef.current > 0 ? (transferredBytesRef.current / totalSizeRef.current) * 100 : 0
+                });
+            }
         }, 500);
         return () => clearInterval(interval);
     }, [status]);
@@ -238,6 +249,8 @@ export function useWebRTC() {
                 if (!pc) return;
                 if (signalData.sdp) {
                     await pc.setRemoteDescription(new RTCSessionDescription(signalData.sdp));
+                    const fpMatch = signalData.sdp.sdp?.match(/a=fingerprint:sha-256\s+(.*)/i);
+                    if (fpMatch) setFingerprint(fpMatch[1]);
                 }
                 if (signalData.candidate) {
                     await pc.addIceCandidate(new RTCIceCandidate(signalData.candidate));
@@ -257,6 +270,8 @@ export function useWebRTC() {
         }
 
         setStatus('transferring');
+        isCancelledRef.current = false;
+        isPausedRef.current = false;
 
         // Send batch info
         const totalBatchSize = filesArray.reduce((acc, f) => acc + f.size, 0);
@@ -287,6 +302,13 @@ export function useWebRTC() {
             const CHUNK_SIZE = 64 * 1024; // 64KB is optimal for WebRTC
 
             while (true) {
+                if (isCancelledRef.current) break;
+                while (isPausedRef.current) {
+                    if (isCancelledRef.current) break;
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                if (isCancelledRef.current) break;
+
                 const { done, value } = await reader.read();
                 if (done) break;
 
@@ -356,6 +378,9 @@ export function useWebRTC() {
 
                 if (signalData.sdp) {
                     await pc.setRemoteDescription(new RTCSessionDescription(signalData.sdp));
+                    const fpMatch = signalData.sdp.sdp?.match(/a=fingerprint:sha-256\s+(.*)/i);
+                    if (fpMatch) setFingerprint(fpMatch[1]);
+                    
                     if (signalData.sdp.type === 'offer') {
                         const answer = await pc.createAnswer();
                         await pc.setLocalDescription(answer);
@@ -373,6 +398,7 @@ export function useWebRTC() {
 
     // --- Cancel / cleanup ---
     const doCancel = useCallback(() => {
+        isCancelledRef.current = true;
         Object.values(dataChannelsRef.current).forEach(dc => {
             try { dc.close(); } catch (e) { /* ignore */ }
         });
@@ -403,15 +429,30 @@ export function useWebRTC() {
     }, []);
 
     const cancelTransfer = useCallback(() => {
+        isCancelledRef.current = true;
         doCancel();
     }, [doCancel]);
+
+    const pauseTransfer = useCallback(() => {
+        if (statusRef.current === 'transferring') {
+            isPausedRef.current = true;
+            setStatus('paused');
+        }
+    }, []);
+
+    const resumeTransfer = useCallback(() => {
+        if (statusRef.current === 'paused') {
+            isPausedRef.current = false;
+            setStatus('transferring');
+        }
+    }, []);
 
     const retryTransfer = useCallback(() => {
         doCancel();
     }, [doCancel]);
 
     return {
-        status, progress, speed, eta, metadata, receivedFile, errorMsg, isSocketConnected,
-        startSession, joinSession, sendFiles, cancelTransfer, retryTransfer
+        status, progress, speed, eta, metadata, receivedFile, errorMsg, isSocketConnected, fingerprint,
+        startSession, joinSession, sendFiles, cancelTransfer, pauseTransfer, resumeTransfer, retryTransfer
     };
 }

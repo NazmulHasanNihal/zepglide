@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { ChevronDown, Shield, Smartphone, Download, Activity, Terminal, Globe, Cpu, RefreshCw, Zap, Database, Route, Lock } from 'lucide-react';
+import { io } from 'socket.io-client';
 
 function cn(...inputs) {
   return twMerge(clsx(inputs));
@@ -51,27 +52,7 @@ const NAME_MAPPING = {
   "United Arab Emirates (UAE)": "United Arab Emirates"
 };
 
-const LiveTransferCounter = () => {
-  const [totalTransfers, setTotalTransfers] = useState(0);
-  
-  useEffect(() => {
-     const fetchStats = async () => {
-       try {
-         const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/global-stats');
-         const data = await res.json();
-         if (data.totalTransfers !== undefined) {
-           setTotalTransfers(data.totalTransfers);
-         }
-       } catch (err) {
-         console.error("Failed to fetch global stats");
-       }
-     };
-     fetchStats();
-     // Refresh every 10 seconds
-     const int = setInterval(fetchStats, 10000);
-     return () => clearInterval(int);
-  }, []);
-  
+const LiveTransferCounter = ({ totalTransfers }) => {
   return <div className="text-[var(--primary)] text-xl md:text-2xl font-black tracking-widest mt-2">{totalTransfers.toLocaleString()} TRANSFERS ON RECORD</div>;
 };
 
@@ -87,7 +68,19 @@ const GlobalMapView = () => {
   const [isCollapsed, setIsCollapsed] = useState(true);
   
   const [recentFiles, setRecentFiles] = useState([]);
-  const [globalStats, setGlobalStats] = useState({ activePeers: 0, bandwidth: 0, filesInFlight: 0, dataSynced: 0, distanceBridged: 0 });
+  const [globalStats, setGlobalStats] = useState({ activePeers: 0, bandwidth: 0, filesInFlight: 0, dataSynced: 0, distanceBridged: 0, totalTransfers: 0 });
+
+  useEffect(() => {
+    const socketUrl = import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : 'http://localhost:3001');
+    const socket = io(socketUrl, { transports: ['websocket', 'polling'] });
+    
+    socket.emit('join-hub');
+    socket.on('hub-stats', (stats) => {
+      setGlobalStats(stats);
+    });
+
+    return () => socket.disconnect();
+  }, []);
   
   const svgRef = useRef(null);
   const [clickEffects, setClickEffects] = useState([]);
@@ -307,7 +300,7 @@ const GlobalMapView = () => {
        {/* Top Header Section */}
        <div className="absolute top-0 w-full z-45 pointer-events-none flex flex-col items-center pt-8 px-4">
            <h1 className="text-xl md:text-3xl font-black uppercase tracking-widest text-[var(--text-main)] text-center drop-shadow-md">Live Zepglide Transfer Map</h1>
-           <LiveTransferCounter />
+           <LiveTransferCounter totalTransfers={globalStats.totalTransfers || 0} />
            
            {/* Top right button - hidden on small screens for responsiveness */}
            <div className="absolute top-6 right-6 border border-[var(--border-main)] bg-[var(--bg-surface)]/80 px-5 py-2 flex flex-col pointer-events-auto cursor-pointer hover:bg-[var(--bg-hover)] transition hidden lg:flex">
@@ -426,7 +419,7 @@ const GlobalMapView = () => {
              {isCollapsed && (
                <div className="flex items-center gap-6 opacity-0 animate-in fade-in fill-mode-forwards duration-500">
                   <span className="text-xs font-bold text-[var(--text-muted)] hidden sm:inline">Active Nodes: <span className="text-[var(--primary)]">{globalStats.activePeers.toLocaleString()}</span></span>
-                  <span className="text-xs font-bold text-[var(--text-muted)]">Speed: <span className="text-[var(--primary)]">{globalStats.bandwidth.toFixed(2)} TB/s</span></span>
+                  <span className="text-xs font-bold text-[var(--text-muted)]">Speed: <span className="text-[var(--primary)]">{globalStats.bandwidth.toFixed(2)} MB/s</span></span>
                </div>
              )}
           </div>
@@ -455,12 +448,12 @@ const GlobalMapView = () => {
 
                      <div className="bg-[var(--bg-main)] p-3 md:p-4 rounded-xl border border-[var(--border-main)] hover:border-[var(--primary-30)] hover:bg-[var(--primary-10)] transition-all group flex flex-col justify-center">
                         <div className="text-[9px] md:text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-1 flex items-center gap-2"><Zap size={12}/> Throughput</div>
-                        <div className="text-xl md:text-3xl font-black text-[var(--text-main)] group-hover:text-[var(--primary)] transition-colors">{globalStats.bandwidth.toFixed(2)} <span className="text-xs md:text-sm text-[var(--text-muted)]">TB/s</span></div>
+                        <div className="text-xl md:text-3xl font-black text-[var(--text-main)] group-hover:text-[var(--primary)] transition-colors">{globalStats.bandwidth.toFixed(2)} <span className="text-xs md:text-sm text-[var(--text-muted)]">MB/s</span></div>
                      </div>
 
                      <div className="bg-[var(--bg-main)] p-3 md:p-4 rounded-xl border border-[var(--border-main)] hover:border-[#4ade80]/30 hover:bg-[#4ade80]/10 transition-all group flex flex-col justify-center">
                         <div className="text-[9px] md:text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-1 flex items-center gap-2"><Database size={12}/> Data Synced</div>
-                        <div className="text-xl md:text-3xl font-black text-[var(--text-main)] group-hover:text-[#4ade80] transition-colors">{globalStats.dataSynced.toFixed(1)} <span className="text-xs md:text-sm text-[var(--text-muted)]">PB</span></div>
+                        <div className="text-xl md:text-3xl font-black text-[var(--text-main)] group-hover:text-[#4ade80] transition-colors">{globalStats.dataSynced.toFixed(1)} <span className="text-xs md:text-sm text-[var(--text-muted)]">GB</span></div>
                      </div>
 
                      <div className="bg-[var(--bg-main)] p-3 md:p-4 rounded-xl border border-[var(--border-main)] hover:border-[#a78bfa]/30 hover:bg-[#a78bfa]/10 transition-all group flex flex-col justify-center">

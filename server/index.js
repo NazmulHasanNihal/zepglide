@@ -19,6 +19,53 @@ const io = new Server(httpServer, {
 
 const roomData = {};
 
+let totalDataSynced = 0; // in MB
+let totalTransfersCount = 0;
+const activeNodes = {}; // socket.id -> { speed: number, lastUpdate: number }
+
+let globalConfig = { maintenance_mode: false, max_transfer_size: '50' };
+
+async function refreshConfig() {
+    try {
+        const { data, error } = await supabase.from('system_config').select('*').eq('id', 'global').maybeSingle();
+        if (!error && data) {
+            globalConfig = { ...globalConfig, ...data };
+        }
+    } catch (e) {
+        console.error("Error fetching config:", e);
+    }
+}
+setInterval(refreshConfig, 10000);
+refreshConfig();
+
+async function initGlobalStats() {
+    try {
+        const { count, error: countErr } = await supabase.from('transfers').select('*', { count: 'exact', head: true });
+        if (!countErr) totalTransfersCount = count || 0;
+
+        const { data, error } = await supabase.from('transfers').select('size');
+        if (!error && data) {
+            let totalSentBytes = 0;
+            data.forEach(t => {
+                const sizeStr = t.size || '';
+                const match = sizeStr.match(/([\d.]+)\s*(GB|MB|KB|TB)/i);
+                if (match) {
+                    const val = parseFloat(match[1]);
+                    const unit = match[2].toUpperCase();
+                    if (unit === 'TB') totalSentBytes += val * 1024 * 1024;
+                    else if (unit === 'GB') totalSentBytes += val * 1024;
+                    else if (unit === 'MB') totalSentBytes += val;
+                    else if (unit === 'KB') totalSentBytes += val / 1024;
+                }
+            });
+            totalDataSynced = totalSentBytes;
+        }
+    } catch (e) {
+        console.error("Error init global stats:", e);
+    }
+}
+initGlobalStats();
+
 // Health check for load balancers
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'UP', timestamp: new Date().toISOString() });
@@ -27,7 +74,23 @@ app.get('/health', (req, res) => {
 io.on('connection', (socket) => {
     console.log(`[CONN] Node attached: ${socket.id}`);
 
+    socket.on('join-hub', () => {
+        socket.join('global-hub');
+    });
+
+    socket.on('telemetry', (data) => {
+        activeNodes[socket.id] = {
+            speed: data.speed || 0,
+            lastUpdate: Date.now()
+        };
+    });
+
     socket.on('create-room', (payload) => {
+        if (globalConfig.maintenance_mode) {
+            socket.emit('room-error', { message: 'System is under maintenance. New transfers are temporarily disabled.' });
+            return;
+        }
+
         const pin = typeof payload === 'string' ? payload : payload.pin;
         const password = payload.password || null;
         const isMultiPeer = payload.isMultiPeer || false;
@@ -71,8 +134,38 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         console.log(`[DISC] Node detached: ${socket.id}`);
+        delete activeNodes[socket.id];
+        for (const pin in roomData) {
+            if (roomData[pin].ownerId === socket.id) {
+                delete roomData[pin];
+            }
+        }
     });
 });
+
+setInterval(() => {
+    const now = Date.now();
+    let currentBandwidth = 0;
+    let activePeers = io.engine.clientsCount;
+    let filesInFlight = Object.keys(roomData).length;
+
+    for (const id in activeNodes) {
+        if (now - activeNodes[id].lastUpdate < 3000) {
+            currentBandwidth += activeNodes[id].speed;
+        } else {
+            delete activeNodes[id];
+        }
+    }
+
+    io.to('global-hub').emit('hub-stats', {
+        activePeers,
+        bandwidth: currentBandwidth,
+        filesInFlight,
+        dataSynced: totalDataSynced / 1024,
+        distanceBridged: activePeers * 350,
+        totalTransfers: totalTransfersCount
+    });
+}, 2000);
 
 // Removed hardcoded DEMO_USER_ID
 
@@ -235,6 +328,19 @@ app.post('/api/transfers', async (req, res) => {
     status: status || 'Complete'
   }).select().single();
   
+  if (!error) {
+      totalTransfersCount++;
+      const match = (size || '').match(/([\d.]+)\s*(GB|MB|KB|TB)/i);
+      if (match) {
+          const val = parseFloat(match[1]);
+          const unit = match[2].toUpperCase();
+          if (unit === 'TB') totalDataSynced += val * 1024 * 1024;
+          else if (unit === 'GB') totalDataSynced += val * 1024;
+          else if (unit === 'MB') totalDataSynced += val;
+          else if (unit === 'KB') totalDataSynced += val / 1024;
+      }
+  }
+
   res.json({ success: true, transfer: { ...data, to: data.recipient } });
 });
 // --- GLOBAL STATS (For Global Hub) ---
@@ -325,13 +431,26 @@ app.get('/api/admin/users', async (req, res) => {
   const users = profiles.map(p => ({
     id: p.id,
     email: p.email || 'Unknown',
-    plan: 'Standard',
+    plan: p.plan || 'Standard',
     bw: 'Unknown',
-    status: 'Active',
+    status: p.status || 'Active',
     region: p.country_code || 'US'
   }));
 
   res.json(users);
+});
+
+app.post('/api/admin/users/:id/status', async (req, res) => {
+  const user = await getAuthUser(req);
+  if (!user || user.email !== 'nazmulhas36@gmail.com') return res.status(403).json({ error: 'Forbidden' });
+
+  const { id } = req.params;
+  const { status } = req.body;
+
+  const { error } = await supabase.from('profiles').update({ status }).eq('id', id);
+  if (error) return res.status(500).json({ error: error.message });
+
+  res.json({ success: true, status });
 });
 
 app.get('/api/admin/transfers', async (req, res) => {
@@ -360,11 +479,79 @@ app.get('/api/devices', async (req, res) => {
   const user = await getAuthUser(req);
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
-  const devices = [
-     { id: user.id, name: 'Current Workstation', type: 'Desktop', os: 'Web Browser', status: 'Online', lastSeen: 'Now', location: 'Current', ip: 'Masked', isCurrent: true }
-  ];
+  const { data, error } = await supabase
+    .from('devices')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('last_seen', { ascending: false });
 
-  res.json(devices);
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+
+  // Mark the current device (the one that made the request based on user agent or IP, we will just use a simple mock logic for isCurrent if user_agent matches)
+  const userAgent = req.headers['user-agent'] || '';
+  
+  const mappedDevices = data.map(d => ({
+    id: d.id,
+    name: d.name,
+    type: d.type,
+    os: d.os,
+    status: d.status,
+    lastSeen: d.last_seen,
+    location: d.location || 'Unknown',
+    ip: 'Masked', // Privacy
+    isCurrent: d.user_agent === userAgent
+  }));
+
+  res.json(mappedDevices);
+});
+
+app.post('/api/devices/register', async (req, res) => {
+  const user = await getAuthUser(req);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { name, type, os, location, userAgent } = req.body;
+
+  // We do an upsert or check if device exists. Simplest is to just check by userAgent to avoid duplicates for the same browser
+  const { data: existing } = await supabase
+    .from('devices')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('user_agent', userAgent)
+    .limit(1);
+
+  if (existing && existing.length > 0) {
+    // Update last_seen
+    await supabase.from('devices').update({ last_seen: new Date().toISOString() }).eq('id', existing[0].id);
+    return res.json({ success: true, id: existing[0].id });
+  }
+
+  // Insert new
+  const { data, error } = await supabase.from('devices').insert({
+    user_id: user.id,
+    name: name || 'Unknown Device',
+    type: type || 'Desktop',
+    os: os || 'Web Browser',
+    location: location || 'Unknown',
+    user_agent: userAgent
+  }).select().single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true, id: data.id });
+});
+
+app.post('/api/checkout', async (req, res) => {
+  const user = await getAuthUser(req);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { plan } = req.body; // e.g. "Pro" or "Enterprise"
+
+  // Update profile
+  const { error } = await supabase.from('profiles').update({ plan }).eq('id', user.id);
+  if (error) return res.status(500).json({ error: error.message });
+
+  res.json({ success: true, plan });
 });
 
 app.get('/api/map', async (req, res) => {
@@ -406,6 +593,39 @@ app.get('/api/admin/metrics', async (req, res) => {
   } catch (err) {
     res.json({ activeTransfers: 0, nodesOnline: 0, trafficRate: '0 req/s', health: 'Error' });
   }
+});
+
+app.get('/api/admin/config', async (req, res) => {
+  const user = await getAuthUser(req);
+  if (!user || user.email !== 'nazmulhas36@gmail.com') return res.status(403).json({ error: 'Forbidden' });
+
+  const { data, error } = await supabase.from('system_config').select('*').eq('id', 'global').maybeSingle();
+  if (error || !data) return res.json({});
+  res.json(data);
+});
+
+app.put('/api/admin/config', async (req, res) => {
+  const user = await getAuthUser(req);
+  if (!user || user.email !== 'nazmulhas36@gmail.com') return res.status(403).json({ error: 'Forbidden' });
+
+  const config = req.body;
+  const { error } = await supabase.from('system_config').update(config).eq('id', 'global');
+  if (error) {
+     // fallback insert if doesn't exist
+     await supabase.from('system_config').insert({ id: 'global', ...config });
+  }
+  
+  res.json({ success: true });
+});
+
+app.post('/api/admin/broadcast', async (req, res) => {
+  const user = await getAuthUser(req);
+  if (!user || user.email !== 'nazmulhas36@gmail.com') return res.status(403).json({ error: 'Forbidden' });
+
+  const { message } = req.body;
+  io.emit('global-broadcast', { message, time: new Date().toISOString() });
+  
+  res.json({ success: true });
 });
 
 httpServer.listen(port, () => {

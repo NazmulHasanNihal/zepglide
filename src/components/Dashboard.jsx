@@ -59,6 +59,20 @@ const Dashboard = React.memo(({ isAuthenticated, onLoginClick, onLogout, isDarkM
               setCustomTheme(data.preferences.customTheme);
           }
       }
+      
+      // Register Device
+      fetch((import.meta.env.VITE_API_URL || '') + '/api/devices/register', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: navigator.platform || 'Unknown Device',
+          type: /Mobi|Android/i.test(navigator.userAgent) ? 'Mobile' : 'Desktop',
+          os: navigator.userAgent,
+          location: data.profile?.location || 'Unknown',
+          userAgent: navigator.userAgent
+        })
+      }).catch(err => console.error("Failed to register device", err));
+
     } catch (e) {
       console.error("Failed to fetch profile from backend", e);
     } finally {
@@ -253,7 +267,7 @@ const Dashboard = React.memo(({ isAuthenticated, onLoginClick, onLogout, isDarkM
               {activeTab === 'devices' && <DevicesView />}
               {activeTab === 'history' && <HistoryView />}
               {activeTab === 'profile' && <ProfileView onLogout={() => { onLogout(); setActiveTab('send'); }} profile={profile} isAdmin={isAdmin} onEditClick={() => handleTabClick('settings')} showToast={showToast} />}
-              {activeTab === 'pricing' && <PricingView />}
+              {activeTab === 'pricing' && <PricingView isAuthenticated={isAuthenticated} showToast={showToast} profile={profile} setProfile={setProfile} onLoginClick={onLoginClick} />}
               {activeTab === 'admin' && isAdmin && <AdminDashboardView showToast={showToast}/>}
               {activeTab === 'settings' && <SettingsView isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode} activeTheme={activeTheme} setActiveTheme={setActiveTheme} themes={themes} profile={profile} setProfile={setProfile} preferences={preferences} setPreferences={setPreferences} showToast={showToast} customTheme={customTheme} setCustomTheme={setCustomTheme} />}
             </div>

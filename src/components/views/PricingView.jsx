@@ -1,16 +1,48 @@
 import React, { useState } from 'react';
 import { Check, X } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 
-export default function PricingView() {
+export default function PricingView({ isAuthenticated, showToast, profile, setProfile, onLoginClick }) {
   const [billingCycle, setBillingCycle] = useState('monthly');
   const [checkoutState, setCheckoutState] = useState('idle'); // idle, processing, done
 
-  const handleCheckout = () => {
+  const handleCheckout = async (planName) => {
+    if (!isAuthenticated) {
+      onLoginClick();
+      return;
+    }
+
     setCheckoutState('processing');
-    setTimeout(() => {
+    
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not logged in');
+
+      const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/checkout', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ plan: planName })
+      });
+      
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
       setCheckoutState('done');
-      setTimeout(() => setCheckoutState('idle'), 3000);
-    }, 2500);
+      setProfile(prev => ({ ...prev, plan: planName }));
+      
+      setTimeout(() => {
+        setCheckoutState('idle');
+        if (showToast) showToast(`Successfully upgraded to ${planName}!`, 'success');
+      }, 2000);
+      
+    } catch (err) {
+      console.error(err);
+      if (showToast) showToast('Failed to checkout', 'error');
+      setCheckoutState('idle');
+    }
   };
 
   return (
@@ -28,8 +60,8 @@ export default function PricingView() {
               ) : (
                 <>
                   <div className="h-16 w-16 mb-6 rounded-full bg-[var(--warning-10)] text-[var(--warning)] flex items-center justify-center border-2 border-[var(--warning-20)]"><Check size={32} strokeWidth={3} /></div>
-                  <h3 className="text-2xl font-black uppercase tracking-tighter text-[var(--text-main)]">Stripe Integration Pending</h3>
-                  <p className="text-xs font-bold text-[var(--text-muted)] mt-2 uppercase tracking-widest text-center max-w-xs">The UI is fully prepared. Connect your Stripe keys to complete real transactions.</p>
+                  <h3 className="text-2xl font-black uppercase tracking-tighter text-[var(--text-main)]">Payment Successful!</h3>
+                  <p className="text-xs font-bold text-[var(--text-muted)] mt-2 uppercase tracking-widest text-center max-w-xs">Your account has been upgraded. Thank you for supporting Zepglide!</p>
                 </>
               )}
            </div>
@@ -47,9 +79,9 @@ export default function PricingView() {
         </div>
       </header>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 w-full px-4 md:px-0 items-end">
-        <PricingCard title="Base" price="$0" features={["Unlimited P2P Handshakes", "Standard Routing", "Ad-Supported Transfer", "Basic WebRTC"]} buttonText="Current Plan" isCurrent />
-        <PricingCard title="Pro" price={billingCycle === 'monthly' ? "$10" : "$8.00"} features={["50GB Cloud Bridge", "Priority TURN Relays", "WebGPU Compression", "Zero-Wait Media Streaming", "Ad-Free Experience"]} buttonText="Upgrade Now" primary onAction={handleCheckout} />
-        <PricingCard title="Enterprise" price={billingCycle === 'monthly' ? "$25" : "$20"} features={["1TB Cloud Bridge", "Delta-Patch Syncing", "Dedicated Relay Servers", "Custom Branded UI", "Full Audit Logs"]} buttonText="Contact Sales" onAction={handleCheckout} />
+        <PricingCard title="Base" price="$0" features={["Unlimited P2P Handshakes", "Standard Routing", "Ad-Supported Transfer", "Basic WebRTC"]} buttonText={profile?.plan === 'Base' || !profile?.plan ? 'Current Plan' : 'Downgrade'} isCurrent={profile?.plan === 'Base' || !profile?.plan} onAction={() => handleCheckout('Base')} />
+        <PricingCard title="Pro" price={billingCycle === 'monthly' ? "$10" : "$8.00"} features={["50GB Cloud Bridge", "Priority TURN Relays", "WebGPU Compression", "Zero-Wait Media Streaming", "Ad-Free Experience"]} buttonText={profile?.plan === 'Pro' ? 'Current Plan' : 'Upgrade Now'} primary isCurrent={profile?.plan === 'Pro'} onAction={() => handleCheckout('Pro')} />
+        <PricingCard title="Enterprise" price={billingCycle === 'monthly' ? "$25" : "$20"} features={["1TB Cloud Bridge", "Delta-Patch Syncing", "Dedicated Relay Servers", "Custom Branded UI", "Full Audit Logs"]} buttonText={profile?.plan === 'Enterprise' ? 'Current Plan' : 'Contact Sales'} isCurrent={profile?.plan === 'Enterprise'} onAction={() => handleCheckout('Enterprise')} />
       </div>
     </div>
   );

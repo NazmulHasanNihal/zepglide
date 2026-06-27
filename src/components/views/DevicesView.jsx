@@ -50,14 +50,15 @@ export default function DevicesView() {
                 <Laptop size={40} className={`mb-6 transition-all ${dev.isCurrent ? 'text-[var(--primary)] group-hover:scale-110' : 'text-[var(--text-muted)] opacity-30 group-hover:text-[var(--primary)] group-hover:opacity-100'}`} />
               )}
               <h3 className="text-xl font-black text-[var(--text-main)] tracking-tight truncate">{dev.name}</h3>
-              <p className="text-sm text-[var(--text-muted)] font-medium uppercase tracking-widest">{dev.location}</p>
+              <p className="text-sm text-[var(--text-muted)] font-medium uppercase tracking-widest mb-1">{dev.location}</p>
+              {!dev.isCurrent && dev.lastSeen && <p className="text-xs text-[var(--text-muted)] opacity-70">Last seen: {new Date(dev.lastSeen).toLocaleString()}</p>}
             </div>
           ))}
         </div>
       )}
-      <button className="mt-10 border-2 border-dashed border-[var(--border-main)] text-[var(--text-muted)] hover:border-[var(--primary)] hover:text-[var(--primary)] bg-[var(--bg-surface)] hover:bg-[var(--primary-10)] w-full rounded-[2rem] p-10 font-black uppercase transition-all duration-500 flex items-center justify-center gap-3 active:scale-95 shadow-sm tracking-widest text-xs">
-         <Plus size={20} /> Pair New Node
-      </button>
+      <div className="mt-10 border-2 border-dashed border-[var(--border-main)] text-[var(--text-muted)] w-full rounded-[2rem] p-10 font-black uppercase flex items-center justify-center gap-3 tracking-widest text-xs">
+         <Plus size={20} /> New devices are paired automatically when you log in.
+      </div>
     </div>
   );
 }
