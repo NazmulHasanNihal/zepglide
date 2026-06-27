@@ -269,7 +269,7 @@ export default function ReceiveView({ showToast, playSfx }) {
               <div className="flex justify-center gap-2 mb-6">
                 {[...Array(6)].map((_, i) => (
                   <input 
-                    key={i} data-index={i} type="text" maxLength="6" 
+                    key={i} data-index={i} type="text" inputMode="numeric" pattern="[0-9]*" maxLength="6" 
                     className="w-10 h-14 md:w-12 md:h-16 bg-[var(--bg-main)] border border-[var(--border-main)] rounded-xl text-center text-2xl font-black text-[var(--text-main)] focus:border-[var(--primary)] outline-none transition-all duration-300 shadow-sm focus:ring-2 focus:ring-[var(--primary-20)]" 
                     placeholder="-" 
                     value={pin[i] || ''}
@@ -317,10 +317,16 @@ export default function ReceiveView({ showToast, playSfx }) {
                           }
                        }}
                        onError={(err) => {
-                          showToast("Camera access denied or failed.", "error");
+                          console.error('Scanner Error:', err);
+                          if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+                             showToast("Camera requires HTTPS or localhost.", "error");
+                          } else {
+                             showToast("Camera access denied or unavailable.", "error");
+                          }
                           setIsScanning(false);
                        }}
-                       components={{ audio: false }}
+                       constraints={{ facingMode: 'environment' }}
+                       components={{ audio: false, finder: true }}
                     />
                     <button onClick={() => setIsScanning(false)} className="absolute top-2 right-2 bg-black/50 text-white p-2 rounded-full hover:bg-red-500 transition-colors">
                        <X size={16} />
