@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { io } from 'socket.io-client';
 
 // --- High-Performance Transfer Constants ---
-const SEND_CHUNK_SIZE = 262144;           // 256KB - optimized chunk size for high-speed throughput
+const SEND_CHUNK_SIZE = 16384;            // 16KB - MUST stay at 16KB for WebRTC maxMessageSize limits!
 const HIGH_WATER_MARK = 16 * 1024 * 1024; // 16MB - larger buffer for faster networks without overwhelming memory
 const LOW_WATER_MARK = 4 * 1024 * 1024;   // 4MB - threshold to resume sending
 const UI_THROTTLE_MS = 100;               // Update progress bar max 10x/sec
