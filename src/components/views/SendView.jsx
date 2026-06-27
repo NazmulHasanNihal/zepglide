@@ -16,6 +16,7 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
 
   const { status, progress, speed, eta, startSession, sendFiles, cancelTransfer, pauseTransfer, resumeTransfer, retryTransfer, isSocketConnected, fingerprint } = useWebRTC();
   const fileInputRef = React.useRef(null);
+  const folderInputRef = React.useRef(null);
   const [cancelStep, setCancelStep] = useState(0);
 
   const isPro = profile?.plan === 'Pro' || profile?.plan === 'Teams';
