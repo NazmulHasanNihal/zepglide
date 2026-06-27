@@ -12,7 +12,7 @@ export default function DevicesView() {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.access_token) return;
 
-        const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/devices', {
+        const res = await fetch((import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : '')) + '/api/devices', {
            headers: { 'Authorization': `Bearer ${session.access_token}` }
         });
         const data = await res.json();
@@ -62,3 +62,4 @@ export default function DevicesView() {
     </div>
   );
 }
+

@@ -43,22 +43,22 @@ export default function AdminDashboardView({ showToast }) {
         const headers = { 'Authorization': `Bearer ${token}` };
 
         // Fetch metrics
-        const metricsRes = await fetch((import.meta.env.VITE_API_URL || '') + '/api/admin/metrics', { headers });
+        const metricsRes = await fetch((import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : '')) + '/api/admin/metrics', { headers });
         const metricsData = await metricsRes.json();
         if (!metricsData.error) setMetrics(metricsData);
 
         // Fetch users
-        const usersRes = await fetch((import.meta.env.VITE_API_URL || '') + '/api/admin/users', { headers });
+        const usersRes = await fetch((import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : '')) + '/api/admin/users', { headers });
         const usersData = await usersRes.json();
         if (Array.isArray(usersData)) setUsers(usersData);
 
         // Fetch transfers  
-        const txRes = await fetch((import.meta.env.VITE_API_URL || '') + '/api/admin/transfers', { headers });
+        const txRes = await fetch((import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : '')) + '/api/admin/transfers', { headers });
         const txData = await txRes.json();
         if (Array.isArray(txData)) setTransfers(txData);
 
         // Fetch Config
-        const configRes = await fetch((import.meta.env.VITE_API_URL || '') + '/api/admin/config', { headers });
+        const configRes = await fetch((import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : '')) + '/api/admin/config', { headers });
         const configData = await configRes.json();
         if (configData.id) {
            setConfig({
@@ -93,7 +93,7 @@ export default function AdminDashboardView({ showToast }) {
     setConfig(newConfig);
     try {
         const { data: { session } } = await supabase.auth.getSession();
-        await fetch((import.meta.env.VITE_API_URL || '') + '/api/admin/config', {
+        await fetch((import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : '')) + '/api/admin/config', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
           body: JSON.stringify(updates)
@@ -133,7 +133,7 @@ export default function AdminDashboardView({ showToast }) {
     setUsers(prev => prev.map(u => u.id === id ? { ...u, status: newStatus } : u));
     try {
         const { data: { session } } = await supabase.auth.getSession();
-        await fetch((import.meta.env.VITE_API_URL || '') + `/api/admin/users/${id}/status`, {
+        await fetch((import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : '')) + `/api/admin/users/${id}/status`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
           body: JSON.stringify({ status: newStatus })
@@ -147,7 +147,7 @@ export default function AdminDashboardView({ showToast }) {
     setBroadcastStatus('sending'); 
     try {
         const { data: { session } } = await supabase.auth.getSession();
-        await fetch((import.meta.env.VITE_API_URL || '') + '/api/admin/broadcast', {
+        await fetch((import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : '')) + '/api/admin/broadcast', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
           body: JSON.stringify({ message: broadcastMsg })
@@ -526,3 +526,4 @@ function ShaperSlider({ label, val, onChange, icon }) {
     </div>
   );
 }
+

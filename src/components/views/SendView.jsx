@@ -148,7 +148,7 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
 
           const totalSize = rawFiles.reduce((acc, f) => acc + f.size, 0);
 
-          await fetch((import.meta.env.VITE_API_URL || '') + '/api/transfers', {
+          await fetch((import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : '')) + '/api/transfers', {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',
@@ -538,3 +538,4 @@ function formatFileSize(bytes) {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
+

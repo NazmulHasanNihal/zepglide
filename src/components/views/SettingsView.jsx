@@ -72,7 +72,7 @@ export default function SettingsView({ isDarkMode, setIsDarkMode, activeTheme, s
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
-      const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/profile', {
+      const res = await fetch((import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : '')) + '/api/profile', {
         method: 'PUT',
         headers: { 
           'Content-Type': 'application/json',
@@ -299,3 +299,4 @@ function ToggleSwitch({ enabled, onChange }) {
     </button>
   );
 }
+

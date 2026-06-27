@@ -12,7 +12,7 @@ export default function HistoryView() {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
 
-        const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/history', {
+        const res = await fetch((import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : '')) + '/api/history', {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -68,3 +68,4 @@ export default function HistoryView() {
     </div>
   );
 }
+

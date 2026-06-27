@@ -170,7 +170,7 @@ const GlobalMapView = () => {
     
     const fetchMapData = async () => {
       try {
-        const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/map');
+        const res = await fetch((import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : '')) + '/api/map');
         const data = await res.json();
         setCountryUsers(data);
       } catch (err) {
@@ -511,3 +511,4 @@ const GlobalMapView = () => {
 };
 
 export default GlobalMapView;
+

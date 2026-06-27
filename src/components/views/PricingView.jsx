@@ -18,7 +18,7 @@ export default function PricingView({ isAuthenticated, showToast, profile, setPr
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not logged in');
 
-      const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/checkout', {
+      const res = await fetch((import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : '')) + '/api/checkout', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -112,3 +112,4 @@ function PricingFeature({ text, included = false }) {
     </div>
   );
 }
+

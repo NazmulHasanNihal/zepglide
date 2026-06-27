@@ -46,7 +46,7 @@ const Dashboard = React.memo(({ isAuthenticated, onLoginClick, onLogout, isDarkM
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
       
-      const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/profile', {
+      const res = await fetch((import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : '')) + '/api/profile', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -61,7 +61,7 @@ const Dashboard = React.memo(({ isAuthenticated, onLoginClick, onLogout, isDarkM
       }
       
       // Register Device
-      fetch((import.meta.env.VITE_API_URL || '') + '/api/devices/register', {
+      fetch((import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : '')) + '/api/devices/register', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -375,3 +375,4 @@ function CommandMenu({ onClose, handleTabClick, isDarkMode, setIsDarkMode, showT
 }
 
 export default Dashboard;
+
