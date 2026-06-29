@@ -447,6 +447,22 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
              </div>
           )}
 
+          {status === 'reconnecting' && (
+            <div className="flex flex-col items-center py-6 w-full animate-in slide-in-from-bottom-8 duration-500 bg-[var(--warning-10)] p-6 rounded-3xl border border-[var(--warning-30)]">
+              <div className="h-16 w-16 bg-[var(--warning)] text-white rounded-[1.5rem] flex items-center justify-center mb-6 shadow-sm border border-[var(--warning-30)] animate-pulse">
+                <RefreshCw size={28} className="animate-spin" />
+              </div>
+              <h3 className="text-2xl font-black text-[var(--text-main)] tracking-tight uppercase mb-2">Reconnecting...</h3>
+              <p className="text-sm font-bold text-[var(--text-muted)] mb-4 text-center px-4 max-w-sm">
+                Connection dropped momentarily. Zepglide is automatically recovering the transfer. Please wait...
+              </p>
+              <div className="w-full bg-[var(--bg-main)] rounded-full h-2 overflow-hidden">
+                <div className="h-full bg-[var(--warning)] rounded-full animate-pulse" style={{ width: `${progress}%` }} />
+              </div>
+              <span className="text-xs text-[var(--text-muted)] mt-2 font-bold">{progress}% transferred before interruption</span>
+            </div>
+          )}
+
           {(status === 'transferring' || status === 'error') && (
             <div className="flex flex-col items-center py-6 w-full animate-in slide-in-from-bottom-8 duration-500">
               

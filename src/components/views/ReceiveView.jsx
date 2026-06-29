@@ -52,9 +52,15 @@ export default function ReceiveView({ showToast }) {
     }
   }, [joinSession, status, isSocketConnected, password]);
 
+  const lastErrorRef = React.useRef({ msg: '', time: 0 });
   useEffect(() => {
     if (errorMsg) {
-      showToast(errorMsg, "error");
+      const now = Date.now();
+      // Deduplicate: only show if it's a new message or 3+ seconds since last toast
+      if (errorMsg !== lastErrorRef.current.msg || now - lastErrorRef.current.time > 3000) {
+        showToast(errorMsg, "error");
+        lastErrorRef.current = { msg: errorMsg, time: now };
+      }
     }
   }, [errorMsg, showToast]);
 
@@ -173,7 +179,21 @@ export default function ReceiveView({ showToast }) {
                 Cancel
               </button>
            </div>
-        ) : status === 'awaiting_approval' ? (
+         ) : status === 'reconnecting' ? (
+           <div className="flex flex-col items-center py-6 w-full animate-in slide-in-from-bottom-8 duration-500 bg-[var(--warning-10)] p-6 rounded-3xl border border-[var(--warning-30)] text-center">
+              <div className="h-16 w-16 bg-[var(--warning)] text-white rounded-[1.5rem] flex items-center justify-center mx-auto mb-6 shadow-sm border border-[var(--warning-30)] animate-pulse">
+                <RefreshCw size={28} className="animate-spin" />
+              </div>
+              <h3 className="text-2xl font-black text-[var(--text-main)] tracking-tight uppercase mb-2">Reconnecting...</h3>
+              <p className="text-sm font-bold text-[var(--text-muted)] mb-4 px-4 max-w-sm">
+                Connection dropped momentarily. Zepglide is automatically recovering the transfer. Please wait...
+              </p>
+              <div className="w-full bg-[var(--bg-main)] rounded-full h-2 overflow-hidden">
+                <div className="h-full bg-[var(--warning)] rounded-full animate-pulse" style={{ width: `${progress}%` }} />
+              </div>
+              <span className="text-xs text-[var(--text-muted)] mt-2 font-bold">{progress}% transferred before interruption</span>
+           </div>
+         ) : status === 'awaiting_approval' ? (
            <div className="flex flex-col items-center py-6 w-full animate-in slide-in-from-bottom-8 duration-500 bg-[var(--bg-main)] p-6 rounded-3xl border border-[var(--border-main)] text-center shadow-inner">
               <div className="h-16 w-16 bg-[var(--primary-10)] text-[var(--primary)] rounded-[1.5rem] flex items-center justify-center mx-auto mb-6 shadow-sm border border-[var(--primary-20)]">
                 <FileText size={28} />

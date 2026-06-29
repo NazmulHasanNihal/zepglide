@@ -225,7 +225,19 @@ const GlobalMapView = () => {
       try {
         const res = await fetch((import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : '')) + '/api/map');
         const data = await res.json();
-        setCountryUsers(data);
+        
+        // Convert ISO codes to full country names to match SVG paths
+        const regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
+        const mappedData = {};
+        for (const [code, count] of Object.entries(data)) {
+            try {
+                const fullName = regionNames.of(code);
+                mappedData[fullName] = count;
+            } catch (e) {
+                mappedData[code] = count;
+            }
+        }
+        setCountryUsers(mappedData);
       } catch (err) {
          console.error('Failed to fetch map data', err);
       }
@@ -451,17 +463,32 @@ const GlobalMapView = () => {
               
               {/* Landmass */}
               <g className="map-landmass">
-                {worldData.map((p) => (
-                   <path
-                     key={`geo-path-${p.index}`}
-                     d={p.d}
-                     data-index={p.index}
-                     data-name={p.name}
-                     className="stroke-[var(--border-main)] stroke-[0.5px] transition-colors duration-500 hover:fill-[var(--primary)] hover:opacity-100 cursor-pointer pointer-events-auto"
-                     fill="url(#dot-pattern)" 
-                     style={{ opacity: 1 }}
-                   />
-                ))}
+                {worldData.map((p) => {
+                   let canonicalName = p.name;
+                   const normalizedRaw = p.name.trim().toLowerCase();
+                   for (const [userListNames, svgNames] of Object.entries(NAME_MAPPING)) {
+                     if (svgNames.trim().toLowerCase() === normalizedRaw) {
+                       canonicalName = userListNames;
+                       break;
+                     }
+                   }
+                   const isActive = (countryUsers[canonicalName] || countryUsers[p.name]) > 0;
+                   
+                   return (
+                       <path
+                         key={`geo-path-${p.index}`}
+                         d={p.d}
+                         data-index={p.index}
+                         data-name={p.name}
+                         className={cn(
+                           "stroke-[var(--border-main)] stroke-[0.5px] transition-all duration-500 hover:fill-[var(--primary)] hover:opacity-100 cursor-pointer pointer-events-auto",
+                           isActive ? "drop-shadow-[0_0_15px_var(--primary)]" : ""
+                         )}
+                         fill={isActive ? "var(--primary)" : "url(#dot-pattern)"} 
+                         style={{ opacity: isActive ? 0.7 : 1 }}
+                       />
+                   );
+                })}
               </g>
 
               {/* Labels */}

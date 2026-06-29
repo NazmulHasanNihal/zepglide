@@ -131,6 +131,7 @@ io.on('connection', (socket) => {
     socket.on('telemetry', (data) => {
         activeNodes[socket.id] = {
             speed: data.speed || 0,
+            country: data.country || 'Unknown',
             lastUpdate: Date.now()
         };
     });
@@ -146,6 +147,11 @@ io.on('connection', (socket) => {
         const isMultiPeer = payload.isMultiPeer || false;
         const branding = payload.branding || null;
 
+        // If room already exists with this pin, clean up the old one
+        if (roomData[pin] && roomData[pin]._cleanupTimer) {
+            clearTimeout(roomData[pin]._cleanupTimer);
+        }
+
         socket.join(pin);
         roomData[pin] = { ownerId: socket.id, password, isMultiPeer, branding };
         console.log(`[ROOM] Created: ${pin} (MultiPeer: ${isMultiPeer}, Password: ${!!password})`);
@@ -155,17 +161,45 @@ io.on('connection', (socket) => {
         const pin = typeof payload === 'string' ? payload : payload.pin;
         const password = payload.password || null;
 
-        const room = io.sockets.adapter.rooms.get(pin);
         const rData = roomData[pin];
 
-        if (!room || !rData) {
-            return socket.emit('room-error', { message: 'Room not found.' });
+        // Check if room data exists in our tracking
+        if (!rData) {
+            return socket.emit('room-error', { message: 'Room not found. The sender may have disconnected.' });
         }
+
+        // Check password
         if (rData.password && rData.password !== password) {
             return socket.emit('room-error', { message: 'Invalid Room Password.' });
         }
+
+        // Get the Socket.IO adapter room
+        const room = io.sockets.adapter.rooms.get(pin);
+
+        // If the room doesn't exist in the adapter (owner socket dropped), but roomData exists
+        // (we're in the grace period), allow join and wait for owner to reconnect
+        if (!room) {
+            socket.join(pin);
+            console.log(`[ROOM] Node ${socket.id} joined (waiting for owner): ${pin}`);
+            socket.emit('room-joined', { branding: rData.branding });
+            return;
+        }
+
+        // Room full check: for non-multi-peer, only allow 2 sockets
         if (!rData.isMultiPeer && room.size >= 2) {
-            return socket.emit('room-error', { message: 'Room already full.' });
+            // Before rejecting, check if the non-owner sockets are actually still connected
+            let connectedCount = 0;
+            for (const socketId of room) {
+                const s = io.sockets.sockets.get(socketId);
+                if (s && s.connected) {
+                    connectedCount++;
+                }
+            }
+
+            // If only 1 or fewer are actually connected, allow join (stale socket will be cleaned up)
+            if (connectedCount >= 2) {
+                return socket.emit('room-error', { message: 'Room already full.' });
+            }
         }
 
         socket.join(pin);
@@ -187,9 +221,17 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log(`[DISC] Node detached: ${socket.id}`);
         delete activeNodes[socket.id];
+        
         for (const pin in roomData) {
             if (roomData[pin].ownerId === socket.id) {
-                delete roomData[pin];
+                // Don't delete room immediately — give the owner 30 seconds to reconnect
+                console.log(`[ROOM] Owner disconnected from ${pin}, grace period started (30s)`);
+                roomData[pin]._cleanupTimer = setTimeout(() => {
+                    if (roomData[pin] && roomData[pin].ownerId === socket.id) {
+                        console.log(`[ROOM] Grace period expired, deleting room: ${pin}`);
+                        delete roomData[pin];
+                    }
+                }, 30000);
             }
         }
     });
@@ -614,15 +656,13 @@ app.post('/api/checkout', async (req, res) => {
 });
 
 app.get('/api/map', async (req, res) => {
-  const { data: profiles, error } = await supabase.from('profiles').select('country_code');
-  if (error) return res.json({});
-
   const aggregated = {};
-  profiles.forEach(p => {
-    const cc = p.country_code || 'Unknown';
-    aggregated[cc] = (aggregated[cc] || 0) + 1;
-  });
-  
+  for (const id in activeNodes) {
+     const cc = activeNodes[id].country || 'Unknown';
+     if (cc !== 'Unknown') {
+         aggregated[cc] = (aggregated[cc] || 0) + 1;
+     }
+  }
   res.json(aggregated);
 });
 
