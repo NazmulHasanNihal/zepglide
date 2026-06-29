@@ -172,6 +172,9 @@ export function useWebRTC() {
                     doCancel();
                 } else if (msg.type === 'ack') {
                     receiverAckedBytesRef.current = msg.bytes;
+                } else if (msg.type === 'eof') {
+                    // Force file completion in the data pipeline
+                    handleIncomingData({ eof: true, index: msg.index });
                 }
             } catch (e) {
                 console.error('[WebRTC] Failed to parse message:', e);
@@ -198,14 +201,16 @@ export function useWebRTC() {
         // Sequence disk writes to prevent concurrent stream crashes and ensure perfect ordering
         writePromiseRef.current = writePromiseRef.current.then(async () => {
             // Accumulate decrypted chunk inside the synchronized promise chain
-            fileBufferRef.current.push(chunkData);
-            transferredBytesRef.current += chunkData.byteLength;
+            if (data.eof !== true) {
+                fileBufferRef.current.push(chunkData);
+                transferredBytesRef.current += chunkData.byteLength;
+            }
             
             // Calculate current buffer size
             const currentBufferSize = fileBufferRef.current.reduce((acc, c) => acc + c.byteLength, 0);
             
             // Only write to disk if buffer is > 4MB (to reduce write overhead) OR if this is the very last chunk
-            const isLastChunk = (transferredBytesRef.current >= totalSizeRef.current);
+            const isLastChunk = (transferredBytesRef.current >= totalSizeRef.current) || data.eof === true;
             
             if (currentBufferSize >= 4 * 1024 * 1024 || isLastChunk) {
                 const chunksToWrite = [...fileBufferRef.current];
@@ -808,6 +813,12 @@ export function useWebRTC() {
 
             // Ensure final 100% is displayed
             setProgress(100);
+
+            // Force an EOF marker to guarantee the receiver finishes the file even if bytes mismatch
+            const eofStr = JSON.stringify({ type: 'eof', index: i });
+            channels.filter(dc => dc.readyState === 'open').forEach(dc => {
+                try { dc.send(eofStr); } catch (e) {}
+            });
 
             // Brief gap between files for receiver to finalize
             if (i < filesArray.length - 1) {
