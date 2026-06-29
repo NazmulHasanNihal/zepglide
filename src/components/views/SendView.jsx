@@ -13,6 +13,7 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
   const [password, setPassword] = useState('');
   const [isMultiPeer, setIsMultiPeer] = useState(false);
   const [sessionStarted, setSessionStarted] = useState(false);
+  const [encryptionKey, setEncryptionKey] = useState('');
 
   const { status, progress, speed, eta, startSession, sendFiles, cancelTransfer, pauseTransfer, resumeTransfer, retryTransfer, isSocketConnected, fingerprint } = useWebRTC();
   const fileInputRef = React.useRef(null);
@@ -99,13 +100,22 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
     if (rawFiles.length === 0) return;
     
     const newPin = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Generate AES key for Zero-Knowledge URLs
+    const cryptoObj = window.crypto || window.msCrypto;
+    const keyArray = new Uint8Array(16);
+    cryptoObj.getRandomValues(keyArray);
+    const newKey = Array.from(keyArray).map(b => b.toString(16).padStart(2, '0')).join('');
+    
     setPin(newPin);
+    setEncryptionKey(newKey);
     setSessionStarted(true);
     setRoutingState('evaluating');
 
     setTimeout(() => {
       setRoutingState('quic');
-      startSession(newPin, password, isMultiPeer);
+      const branding = isPro && preferences?.customTheme ? preferences.customTheme : null;
+      startSession(newPin, password, isMultiPeer, newKey, branding);
     }, 1500);
   };
 
@@ -380,7 +390,7 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
                  <button 
                    onClick={(e) => {
                      e.stopPropagation();
-                     navigator.clipboard.writeText(`${window.location.origin}/?pin=${pin}`);
+                     navigator.clipboard.writeText(`${window.location.origin}/#receive=${pin}&key=${encryptionKey}`);
                      showToast("Direct Link Copied!", "success");
                    }}
                    className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wider bg-[var(--primary)] text-[var(--bg-main)] hover:brightness-110 active:scale-95 px-3 py-1.5 rounded-full transition-all shadow-sm"
@@ -391,7 +401,7 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
             </div>
             
             <div className="shrink-0 bg-white/90 p-3 rounded-xl shadow-inner border border-white/20">
-               <QRCodeSVG value={`${window.location.origin}/?pin=${pin}`} size={100} fgColor="#111" />
+               <QRCodeSVG value={`${window.location.origin}/#receive=${pin}&key=${encryptionKey}`} size={100} fgColor="#111" />
             </div>
           </div>
 

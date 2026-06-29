@@ -103,7 +103,11 @@ const Dashboard = React.memo(({ isAuthenticated, onLoginClick, onLogout, isDarkM
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('pin')) {
+    let hashReceive = null;
+    if (window.location.hash.startsWith('#receive=')) {
+      hashReceive = window.location.hash.split('&')[0].replace('#receive=', '');
+    }
+    if (params.get('pin') || hashReceive) {
       setActiveTab('receive');
     }
   }, []);

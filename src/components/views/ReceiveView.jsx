@@ -7,7 +7,7 @@ export default function ReceiveView({ showToast }) {
   const [pin, setPin] = useState('');
   const [password, setPassword] = useState('');
   const [isScanning, setIsScanning] = useState(false);
-  const { status, progress, speed, eta, metadata, receivedFile, errorMsg, joinSession, acceptTransfer, cancelTransfer, retryTransfer, isSocketConnected, fingerprint } = useWebRTC();
+  const { status, progress, speed, eta, metadata, receivedFile, errorMsg, joinSession, acceptTransfer, cancelTransfer, retryTransfer, isSocketConnected, fingerprint, branding } = useWebRTC();
   
   const facts = ["Bypassing Symmetric NAT...", "Establishing Quantum-Safe Keys...", "Securing P2P WebRTC Layer...", "Discovering Mesh Route..."];
   const [factIndex, setFactIndex] = useState(0);
@@ -35,10 +35,20 @@ export default function ReceiveView({ showToast }) {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const pinParam = params.get('pin');
+    let pinParam = params.get('pin');
+    let keyParam = null;
+    
+    if (window.location.hash.startsWith('#receive=')) {
+       const hashParts = window.location.hash.substring(1).split('&');
+       for (const part of hashParts) {
+         if (part.startsWith('receive=')) pinParam = part.split('=')[1];
+         if (part.startsWith('key=')) keyParam = part.split('=')[1];
+       }
+    }
+    
     if (pinParam && pinParam.length === 6 && status === 'idle' && isSocketConnected) {
       setPin(pinParam);
-      joinSession(pinParam, password);
+      joinSession(pinParam, password, keyParam);
     }
   }, [joinSession, status, isSocketConnected, password]);
 
@@ -103,9 +113,13 @@ export default function ReceiveView({ showToast }) {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center w-full max-w-md mx-auto mt-8 md:mt-24 animate-in fade-in zoom-in duration-300">
+    <div className="flex flex-col items-center justify-center w-full max-w-md mx-auto mt-8 md:mt-24 animate-in fade-in zoom-in duration-300" style={branding ? { '--primary': branding.primary, '--bg-main': branding.bg, '--bg-surface': branding.bg } : {}}>
       <div className="bg-[var(--bg-surface)] border border-[var(--border-main)] p-8 md:p-12 rounded-[2.5rem] shadow-2xl w-full text-center relative overflow-hidden">
         
+        {branding?.logoUrl && status !== 'idle' && (
+           <img src={branding.logoUrl} alt="Sender Brand" className="h-12 max-w-[200px] object-contain mx-auto mb-8 animate-in fade-in" />
+        )}
+
         {status === 'connecting' || status === 'connected' ? (
            <div className="flex flex-col items-center py-6 animate-in fade-in duration-500">
               <div className="relative w-48 h-48 flex items-center justify-center mb-12">

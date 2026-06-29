@@ -1,5 +1,30 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { io } from 'socket.io-client';
+import localforage from 'localforage';
+
+localforage.config({
+    name: 'Zepglide',
+    storeName: 'file_chunks'
+});
+
+// --- Crypto Utils ---
+const hexToArrayBuffer = (hex) => {
+    if (!hex) return new ArrayBuffer(0);
+    const bytes = new Uint8Array(Math.ceil(hex.length / 2));
+    for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+    return bytes.buffer;
+};
+
+const importKey = async (hexKey) => {
+    if (!hexKey) return null;
+    try {
+        const keyBuffer = hexToArrayBuffer(hexKey);
+        return await window.crypto.subtle.importKey('raw', keyBuffer, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+    } catch(e) {
+        console.error("Crypto import error", e);
+        return null;
+    }
+};
 
 // --- High-Performance Transfer Constants ---
 const SEND_CHUNK_SIZE = 65536;            // 64KB - max safe chunk for cross-browser WebRTC (Chrome/Firefox/Safari all support 256KB+)
@@ -18,8 +43,10 @@ export function useWebRTC() {
     const [errorMsg, setErrorMsg] = useState('');
     const [isSocketConnected, setIsSocketConnected] = useState(false);
     const [fingerprint, setFingerprint] = useState(null);
+    const [branding, setBranding] = useState(null);
 
     // Use refs for mutable state that needs to be current inside callbacks
+    const cryptoKeyRef = useRef(null);
     const socketRef = useRef(null);
     const peerConnectionsRef = useRef({});
     const dataChannelsRef = useRef({});
@@ -99,7 +126,23 @@ export function useWebRTC() {
             return;
         }
 
-        transferredBytesRef.current += data.byteLength;
+        let chunkData = data;
+        if (cryptoKeyRef.current) {
+            try {
+                const iv = new Uint8Array(data.slice(0, 12));
+                const ciphertext = data.slice(12);
+                chunkData = await window.crypto.subtle.decrypt(
+                    { name: 'AES-GCM', iv }, 
+                    cryptoKeyRef.current, 
+                    ciphertext
+                );
+            } catch (e) {
+                console.error("Decryption failed", e);
+                return; // drop corrupted chunk
+            }
+        }
+
+        transferredBytesRef.current += chunkData.byteLength;
         
         if (useFileSystemApiRef.current && fileStreamRef.current) {
             try {
@@ -108,7 +151,16 @@ export function useWebRTC() {
                 console.error("Stream write failed:", e);
             }
         } else {
-            fileBufferRef.current.push(data);
+            fileBufferRef.current.push(chunkData);
+            
+            // To prevent memory bloat, periodically flush to localforage
+            if (fileBufferRef.current.length > 50) { // flush ~3MB
+                const chunksToSave = [...fileBufferRef.current];
+                fileBufferRef.current = [];
+                const batchSize = chunksToSave.reduce((acc, c) => acc + c.byteLength, 0);
+                const startOffset = transferredBytesRef.current - batchSize;
+                localforage.setItem(`chunk_${startOffset}`, new Blob(chunksToSave)).catch(e => console.error("IDB save error", e));
+            }
         }
 
         const currentMeta = metadataRef.current;
@@ -127,8 +179,26 @@ export function useWebRTC() {
                 fileStreamRef.current = null;
                 fileObj = { name: currentMeta.name, savedToDisk: true, index: currentMeta.index };
             } else {
-                const blob = new Blob(fileBufferRef.current, { type: currentMeta.mime });
-                fileObj = { blob, name: currentMeta.name, url: URL.createObjectURL(blob), index: currentMeta.index };
+                // Gather chunks from localforage
+                const keys = await localforage.keys();
+                keys.sort((a, b) => parseInt(a.split('_')[1]) - parseInt(b.split('_')[1]));
+                
+                const blobParts = [];
+                for (const k of keys) {
+                    const savedBlob = await localforage.getItem(k);
+                    if (savedBlob) blobParts.push(savedBlob);
+                }
+                
+                // Add remaining in buffer
+                if (fileBufferRef.current.length > 0) {
+                    blobParts.push(new Blob(fileBufferRef.current));
+                }
+                
+                const finalBlob = new Blob(blobParts, { type: currentMeta.mime });
+                fileObj = { blob: finalBlob, name: currentMeta.name, url: URL.createObjectURL(finalBlob), index: currentMeta.index };
+                
+                // Cleanup
+                await localforage.clear();
             }
 
             const prevFiles = receivedFileRef.current || [];
@@ -167,7 +237,21 @@ export function useWebRTC() {
             setStatus('transferring');
             
             // Tell the sender we are ready
-            const readyStr = JSON.stringify({ type: 'ready' });
+            let resumeOffset = 0;
+            if (!useFileSystemApiRef.current) {
+                const keys = await localforage.keys();
+                if (keys.length > 0 && metadataRef.current) {
+                     const lastKey = keys.sort((a, b) => parseInt(b.split('_')[1]) - parseInt(a.split('_')[1]))[0];
+                     const lastBlob = await localforage.getItem(lastKey);
+                     if (lastBlob) {
+                         resumeOffset = parseInt(lastKey.split('_')[1]) + lastBlob.size;
+                         transferredBytesRef.current = resumeOffset;
+                         fileBufferRef.current = [];
+                     }
+                }
+            }
+
+            const readyStr = JSON.stringify({ type: 'ready', resumeOffset });
             Object.values(dataChannelsRef.current).forEach(dc => {
                 if (dc.readyState === 'open') dc.send(readyStr);
             });
@@ -179,7 +263,20 @@ export function useWebRTC() {
             // Fallback to memory
             useFileSystemApiRef.current = false;
             setStatus('transferring');
-            const readyStr = JSON.stringify({ type: 'ready' });
+            
+            let resumeOffset = 0;
+            const keys = await localforage.keys();
+            if (keys.length > 0 && metadataRef.current) {
+                 const lastKey = keys.sort((a, b) => parseInt(b.split('_')[1]) - parseInt(a.split('_')[1]))[0];
+                 const lastBlob = await localforage.getItem(lastKey);
+                 if (lastBlob) {
+                     resumeOffset = parseInt(lastKey.split('_')[1]) + lastBlob.size;
+                     transferredBytesRef.current = resumeOffset;
+                     fileBufferRef.current = [];
+                 }
+            }
+            
+            const readyStr = JSON.stringify({ type: 'ready', resumeOffset });
             Object.values(dataChannelsRef.current).forEach(dc => {
                 if (dc.readyState === 'open') dc.send(readyStr);
             });
@@ -281,7 +378,10 @@ export function useWebRTC() {
     }, []);
 
     // --- Start session (sender) ---
-    const startSession = useCallback((pin, password = '', isMultiPeer = false) => {
+    const startSession = useCallback(async (pin, password = '', isMultiPeer = false, keyHex = '', brandingData = null) => {
+        if (keyHex) {
+            cryptoKeyRef.current = await importKey(keyHex);
+        }
         const socket = socketRef.current;
         if (!socket || !socket.connected) {
             setErrorMsg('Not connected to signaling server. Please wait...');
@@ -295,7 +395,7 @@ export function useWebRTC() {
         socket.off('peer-joined');
         socket.off('signal');
 
-        socket.emit('create-room', { pin, password, isMultiPeer });
+        socket.emit('create-room', { pin, password, isMultiPeer, branding: brandingData });
 
         socket.on('peer-joined', async ({ receiverId }) => {
             try {
@@ -405,12 +505,14 @@ export function useWebRTC() {
 
             // Wait for receiver to be ready (they must accept the file or choose save location)
             setStatus('awaiting_approval');
+            let resumeOffset = 0;
             await new Promise(resolve => {
                 const checkReady = (event) => {
                     if (typeof event.data === 'string') {
                         try {
                             const msg = JSON.parse(event.data);
                             if (msg.type === 'ready') {
+                                if (msg.resumeOffset) resumeOffset = msg.resumeOffset;
                                 channels.forEach(dc => dc.removeEventListener('message', checkReady));
                                 resolve();
                             }
@@ -423,11 +525,11 @@ export function useWebRTC() {
 
             // Stream the file — read chunks directly from the browser's file stream, with fallback for older browsers
             let reader;
-            if (typeof file.stream === 'function') {
+            if (typeof file.stream === 'function' && resumeOffset === 0) {
                 reader = file.stream().getReader();
             } else {
-                const makeStreamReader = (f) => {
-                    let offset = 0;
+                const makeStreamReader = (f, start) => {
+                    let offset = start;
                     return {
                         read: async () => {
                             if (offset >= f.size) return { done: true };
@@ -438,7 +540,8 @@ export function useWebRTC() {
                         }
                     };
                 };
-                reader = makeStreamReader(file);
+                reader = makeStreamReader(file, resumeOffset);
+                transferredBytesRef.current = resumeOffset;
             }
 
             let yieldCounter = 0;
@@ -471,7 +574,21 @@ export function useWebRTC() {
                     }
 
                     // Create an ArrayBuffer slice directly for 100% browser/mobile compatibility
-                    const chunk = value.buffer.slice(value.byteOffset + offset, value.byteOffset + end);
+                    let chunkBuffer = value.buffer.slice(value.byteOffset + offset, value.byteOffset + end);
+                    const originalChunkSize = chunkBuffer.byteLength;
+
+                    if (cryptoKeyRef.current) {
+                        const iv = window.crypto.getRandomValues(new Uint8Array(12));
+                        const ciphertext = await window.crypto.subtle.encrypt(
+                            { name: 'AES-GCM', iv }, 
+                            cryptoKeyRef.current, 
+                            chunkBuffer
+                        );
+                        const payload = new Uint8Array(iv.length + ciphertext.byteLength);
+                        payload.set(iv, 0);
+                        payload.set(new Uint8Array(ciphertext), iv.length);
+                        chunkBuffer = payload.buffer;
+                    }
 
                     for (const dc of channels) {
                         if (dc.readyState !== 'open') continue;
@@ -481,11 +598,11 @@ export function useWebRTC() {
                             await waitForDrain(dc);
                         }
 
-                        dc.send(chunk);
+                        dc.send(chunkBuffer);
                     }
 
                     offset = end;
-                    transferredBytesRef.current += chunk.byteLength;
+                    transferredBytesRef.current += originalChunkSize;
                 }
 
                 // Throttle UI updates to avoid React re-renders choking the send loop
@@ -514,7 +631,10 @@ export function useWebRTC() {
     }, []);
 
     // --- Join session (receiver) ---
-    const joinSession = useCallback((pin, password = '') => {
+    const joinSession = useCallback(async (pin, password = '', keyHex = '') => {
+        if (keyHex) {
+            cryptoKeyRef.current = await importKey(keyHex);
+        }
         const socket = socketRef.current;
         if (!socket || !socket.connected) {
             setErrorMsg('Not connected to signaling server. Please wait...');
@@ -528,6 +648,12 @@ export function useWebRTC() {
         socket.off('signal');
 
         socket.emit('join-room', { pin, password });
+
+        socket.on('room-joined', (data) => {
+            if (data.branding) {
+                setBranding(data.branding);
+            }
+        });
 
         socket.on('signal', async ({ senderId, signalData }) => {
             try {
@@ -592,6 +718,7 @@ export function useWebRTC() {
         setEta(0);
         setMetadata(null);
         setReceivedFile(null);
+        setBranding(null);
 
         // Clean up socket listeners
         const socket = socketRef.current;
@@ -625,7 +752,7 @@ export function useWebRTC() {
     }, [doCancel]);
 
     return {
-        status, progress, speed, eta, metadata, receivedFile, errorMsg, isSocketConnected, fingerprint,
+        status, progress, speed, eta, metadata, receivedFile, errorMsg, isSocketConnected, fingerprint, branding,
         startSession, joinSession, acceptTransfer, sendFiles, cancelTransfer, pauseTransfer, resumeTransfer, retryTransfer
     };
 }

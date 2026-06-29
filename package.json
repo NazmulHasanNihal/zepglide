@@ -20,6 +20,7 @@
     "dotenv": "^17.4.0",
     "express": "^4.21.2",
     "jszip": "^3.10.1",
+    "localforage": "^1.10.0",
     "lucide-react": "^0.477.0",
     "qrcode.react": "^4.2.0",
     "react": "^19.0.0",

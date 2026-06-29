@@ -402,19 +402,16 @@ export default function AdminDashboardView({ showToast }) {
                <div className="flex justify-between items-center mb-6">
                  <div>
                    <h4 className="text-sm font-black uppercase tracking-widest text-[var(--text-muted)]">P2P Network Bandwidth</h4>
-                   <p className="text-3xl font-black tracking-tighter text-[var(--primary)] mt-1">{((metrics.nodesOnline || 1) * 2.4).toFixed(1)} TB <span className="text-sm text-[var(--text-muted)]">/ mo</span></p>
-                 </div>
-                 <div className="px-4 py-2 bg-[var(--success-10)] text-[var(--success)] text-[10px] font-black uppercase tracking-widest rounded-xl border border-[var(--success-20)]">
-                   +14.2% Growth
+                   <p className="text-3xl font-black tracking-tighter text-[var(--primary)] mt-1">{(metrics.dataSynced || 0).toFixed(2)} <span className="text-sm text-[var(--text-muted)]">GB</span></p>
                  </div>
                </div>
                
-               {/* SVG Graph Simulation */}
+               {/* Graph Simulation using real heatmap data */}
                <div className="relative h-32 w-full mt-auto flex items-end justify-between gap-1.5 md:gap-2">
-                 {[40, 55, 30, 80, 45, 60, 95, 70, 85, 50, 75, 100].map((h, i) => (
-                   <div key={i} className="w-full bg-[var(--primary-20)] rounded-t-md hover:bg-[var(--primary)] transition-all relative group cursor-crosshair" style={{height: `${h}%`}}>
+                 {heatmap.slice(-12).map((h, i) => (
+                   <div key={i} className="w-full bg-[var(--primary-20)] rounded-t-md hover:bg-[var(--primary)] transition-all relative group cursor-crosshair" style={{height: `${Math.max(5, h)}%`}}>
                      <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-[var(--bg-surface)] text-[10px] font-bold px-2 py-1 rounded shadow-lg border border-[var(--border-main)] opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
-                       {h * 12} GB
+                       {Math.round(h)}% Anomaly
                      </div>
                    </div>
                  ))}
@@ -425,19 +422,19 @@ export default function AdminDashboardView({ showToast }) {
                <div className="bg-[var(--bg-main)] p-6 rounded-3xl border border-[var(--border-main)] shadow-inner flex-1 flex flex-col justify-center">
                  <h4 className="text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">Relay Fallback Rate</h4>
                  <div className="flex items-end gap-3 mb-3">
-                   <span className="text-4xl font-black tracking-tighter text-[var(--warning)]">4.2%</span>
+                   <span className="text-4xl font-black tracking-tighter text-[var(--warning)]">0.0%</span>
                  </div>
                  <div className="w-full bg-[var(--bg-surface)] h-2 rounded-full overflow-hidden">
-                   <div className="bg-[var(--warning)] h-full rounded-full" style={{width: '4.2%'}}></div>
+                   <div className="bg-[var(--warning)] h-full rounded-full" style={{width: '0%'}}></div>
                  </div>
                </div>
 
                <div className="bg-[var(--bg-main)] p-6 rounded-3xl border border-[var(--border-main)] shadow-inner flex-1 flex flex-col justify-center">
                  <h4 className="text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">Server Costs Saved</h4>
                  <div className="flex items-end gap-3 mb-2">
-                   <span className="text-4xl font-black tracking-tighter text-[var(--success)]">${((transfers.length || 1) * 342).toLocaleString()}</span>
+                   <span className="text-4xl font-black tracking-tighter text-[var(--success)]">${((metrics.dataSynced || 0) * 0.08).toFixed(2)}</span>
                  </div>
-                 <p className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Est. this month</p>
+                 <p className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Est. based on bandwidth</p>
                </div>
             </div>
          </div>

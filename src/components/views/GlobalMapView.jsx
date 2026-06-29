@@ -65,7 +65,36 @@ const GlobalMapView = () => {
   const [activeLabels, setActiveLabels] = useState([]);
   const [hoverInfo, setHoverInfo] = useState({ name: '', visible: false, x: 0, y: 0, users: 0 });
   
+  const [mapScale, setMapScale] = useState(1);
+  const [mapPan, setMapPan] = useState({ x: 0, y: 0 });
+  const [isMapDragging, setIsMapDragging] = useState(false);
+  const dragRef = useRef({ startX: 0, startY: 0, lastPanX: 0, lastPanY: 0, pinchDist: 0 });
+
   const [isCollapsed, setIsCollapsed] = useState(true);
+  const [touchStartY, setTouchStartY] = useState(null);
+  
+  const handleTouchStart = (e) => {
+    setTouchStartY(e.touches[0].clientY);
+  };
+  
+  const handleTouchMove = (e) => {
+    if (touchStartY === null) return;
+    const touchEndY = e.touches[0].clientY;
+    const diff = touchStartY - touchEndY;
+    
+    // 30px threshold for swipe detection
+    if (diff > 30) {
+      setIsCollapsed(false); // Swipe Up -> Expand
+      setTouchStartY(null);
+    } else if (diff < -30) {
+      setIsCollapsed(true); // Swipe Down -> Collapse
+      setTouchStartY(null);
+    }
+  };
+  
+  const handleTouchEnd = () => {
+    setTouchStartY(null);
+  };
   
   const [recentFiles, setRecentFiles] = useState([]);
   const [globalStats, setGlobalStats] = useState({ activePeers: 0, bandwidth: 0, filesInFlight: 0, dataSynced: 0, distanceBridged: 0, totalTransfers: 0 });
@@ -98,6 +127,30 @@ const GlobalMapView = () => {
     setTimeout(() => {
        setClickEffects(prev => prev.filter(c => c.id !== id));
     }, 1000);
+    
+    // Also trigger tooltip logic for mobile tap support
+    const target = e.target.closest('path[data-name]');
+    if (target) {
+      const rawName = target.getAttribute('data-name');
+      let canonicalName = rawName;
+      const normalizedRaw = rawName.trim().toLowerCase();
+      for (const [userListNames, svgNames] of Object.entries(NAME_MAPPING)) {
+        if (svgNames.trim().toLowerCase() === normalizedRaw) {
+          canonicalName = userListNames;
+          break;
+        }
+      }
+      const users = countryUsers[canonicalName] || countryUsers[rawName] || 0;
+      setHoverInfo({ 
+        name: canonicalName, 
+        visible: true, 
+        x: e.clientX, 
+        y: e.clientY, 
+        users 
+      });
+    } else {
+      setHoverInfo(prev => ({ ...prev, visible: false }));
+    }
   };
 
   useEffect(() => {
@@ -286,11 +339,64 @@ const GlobalMapView = () => {
     }
   };
 
+  const handleMapPointerDown = (e) => {
+    if (e.touches && e.touches.length === 2) {
+       const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+       dragRef.current.pinchDist = dist;
+       return;
+    }
+    
+    setIsMapDragging(true);
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    dragRef.current.startX = clientX;
+    dragRef.current.startY = clientY;
+    dragRef.current.lastPanX = mapPan.x;
+    dragRef.current.lastPanY = mapPan.y;
+  };
+
+  const handleMapPointerMove = (e) => {
+    if (e.touches && e.touches.length === 2) {
+       const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+       if (dragRef.current.pinchDist) {
+         const delta = dist - dragRef.current.pinchDist;
+         if (Math.abs(delta) > 5) {
+            setMapScale(prev => Math.min(Math.max(1, prev + (delta > 0 ? 0.03 : -0.03)), 5));
+            dragRef.current.pinchDist = dist;
+         }
+       }
+       return;
+    }
+
+    if (!isMapDragging) {
+       handleMouseMove(e);
+       return;
+    }
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    
+    const deltaX = (clientX - dragRef.current.startX) / mapScale;
+    const deltaY = (clientY - dragRef.current.startY) / mapScale;
+    
+    setMapPan({
+      x: dragRef.current.lastPanX + deltaX,
+      y: dragRef.current.lastPanY + deltaY
+    });
+  };
+
+  const handleMapPointerUp = () => {
+    setIsMapDragging(false);
+    dragRef.current.pinchDist = 0;
+  };
+
+  const handleMapWheel = (e) => {
+    const delta = e.deltaY * -0.002;
+    setMapScale(prev => Math.min(Math.max(1, prev + delta), 5));
+  };
+
   return (
     <div 
        className="relative w-full h-[calc(100vh-80px)] overflow-hidden flex flex-col bg-[var(--bg-main)] text-[var(--text-main)] font-sans touch-none select-none animate-in fade-in"
-       onMouseMove={handleMouseMove}
-       onClick={handleMapClick}
     >
         
        {/* Background Grid Ambience */}
@@ -310,12 +416,27 @@ const GlobalMapView = () => {
        </div>
 
        {/* Map Layer */}
-       <div className="flex-1 w-full h-full relative flex items-center justify-center">
+       <div 
+         className={cn("flex-1 w-full h-full relative flex items-center justify-center", isMapDragging ? "cursor-grabbing" : "cursor-grab")}
+         onMouseDown={handleMapPointerDown}
+         onMouseMove={handleMapPointerMove}
+         onMouseUp={handleMapPointerUp}
+         onMouseLeave={handleMapPointerUp}
+         onTouchStart={handleMapPointerDown}
+         onTouchMove={handleMapPointerMove}
+         onTouchEnd={handleMapPointerUp}
+         onWheel={handleMapWheel}
+         onClick={handleMapClick}
+       >
            <svg 
               ref={svgRef}
               viewBox="0 0 2000 857" 
               className="w-[95%] h-[95%] object-contain mt-[-80px] md:mt-0 pointer-events-none drop-shadow-[0_0_10px_rgba(255,255,255,0.05)]"
               preserveAspectRatio="xMidYMid meet"
+              style={{ 
+                 transform: `scale(${mapScale}) translate(${mapPan.x}px, ${mapPan.y}px)`, 
+                 transition: isMapDragging ? 'none' : 'transform 0.1s ease-out' 
+              }}
            >
               <defs>
                  <pattern id="dot-pattern" x="0" y="0" width="8" height="8" patternUnits="userSpaceOnUse">
@@ -392,20 +513,39 @@ const GlobalMapView = () => {
            </svg>
        </div>
 
+       {/* Zoom Controls (Mobile & Desktop) */}
+       <div className="absolute right-4 bottom-24 md:bottom-32 flex flex-col gap-3 z-40">
+         <button 
+            onClick={() => setMapScale(prev => Math.min(5, prev + 0.5))} 
+            className="w-12 h-12 bg-[var(--bg-surface)]/90 backdrop-blur-md border-2 border-[var(--border-main)] rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform hover:border-[var(--primary)] hover:text-[var(--primary)] text-[var(--text-main)]"
+         >
+            <span className="text-2xl font-black mb-1">+</span>
+         </button>
+         <button 
+            onClick={() => setMapScale(prev => Math.max(1, prev - 0.5))} 
+            className="w-12 h-12 bg-[var(--bg-surface)]/90 backdrop-blur-md border-2 border-[var(--border-main)] rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform hover:border-[var(--primary)] hover:text-[var(--primary)] text-[var(--text-main)]"
+         >
+            <span className="text-2xl font-black mb-1">-</span>
+         </button>
+       </div>
+
        {/* Bottom Dashboard Panel */}
        <div 
          className={cn(
-           "absolute bottom-0 left-0 w-full bg-[var(--bg-surface)]/90 border-t border-[var(--border-main)] backdrop-blur-md z-50 transition-all duration-500 ease-in-out flex flex-col shadow-[0_-20px_50px_rgba(0,0,0,0.1)] overflow-hidden",
+           "absolute bottom-0 left-0 w-full bg-[var(--bg-surface)]/90 border-t border-[var(--border-main)] backdrop-blur-md z-50 transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] flex flex-col shadow-[0_-20px_50px_rgba(0,0,0,0.1)]",
            isCollapsed ? "max-h-[60px]" : "max-h-[600px]"
          )}
        >
-          {/* Clickable Header Area to Toggle Collapse */}
+          {/* Clickable Header Area to Toggle Collapse (with mobile swipe support) */}
           <div 
             onClick={() => setIsCollapsed(!isCollapsed)}
-            className="w-full h-[60px] flex items-center justify-between px-6 md:px-12 cursor-pointer hover:bg-[var(--bg-hover)] transition-colors border-b border-[var(--border-main)] shrink-0 group relative z-50"
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            className="w-full h-[60px] flex items-center justify-between px-6 md:px-12 cursor-pointer hover:bg-[var(--bg-hover)] transition-colors border-b border-[var(--border-main)] shrink-0 group relative z-50 touch-pan-y"
           >
-             {/* Toggle Button Graphic */}
-             <div className="absolute left-1/2 -top-4 -translate-x-1/2 w-10 h-8 rounded-t-full border border-[var(--border-main)] bg-[var(--bg-surface)] flex items-center justify-center group-hover:border-[var(--primary)] group-hover:bg-[var(--primary-10)] transition-all">
+             {/* Highly Visible Toggle Button Graphic */}
+             <div className="absolute left-1/2 -top-[24px] -translate-x-1/2 w-16 h-6 rounded-t-xl border-t border-l border-r border-[var(--border-main)] bg-[var(--bg-surface)]/90 backdrop-blur-md shadow-[0_-5px_15px_rgba(0,0,0,0.1)] flex items-center justify-center group-hover:border-[var(--primary)] group-hover:bg-[var(--primary-10)] transition-all pointer-events-auto">
                 <ChevronDown size={18} className={cn("text-[var(--text-muted)] group-hover:text-[var(--primary)] transition-transform duration-500", isCollapsed ? "rotate-180" : "")} />
              </div>
 
@@ -416,65 +556,63 @@ const GlobalMapView = () => {
                 </span>
              </div>
              
-             {isCollapsed && (
-               <div className="flex items-center gap-6 opacity-0 animate-in fade-in fill-mode-forwards duration-500">
-                  <span className="text-xs font-bold text-[var(--text-muted)] hidden sm:inline">Active Nodes: <span className="text-[var(--primary)]">{globalStats.activePeers.toLocaleString()}</span></span>
-                  <span className="text-xs font-bold text-[var(--text-muted)]">Speed: <span className="text-[var(--primary)]">{globalStats.bandwidth.toFixed(2)} MB/s</span></span>
-               </div>
-             )}
+             <div className={cn("flex items-center gap-6 transition-opacity duration-500", isCollapsed ? "opacity-100" : "opacity-0 pointer-events-none")}>
+                <span className="text-xs font-bold text-[var(--text-muted)] hidden sm:inline">Active Nodes: <span className="text-[var(--primary)]">{globalStats.activePeers.toLocaleString()}</span></span>
+                <span className="text-xs font-bold text-[var(--text-muted)] hidden sm:inline">Speed: <span className="text-[var(--primary)]">{globalStats.bandwidth.toFixed(2)} MB/s</span></span>
+             </div>
           </div>
 
           {/* Expanded View Content */}
-          {!isCollapsed && (
-            <div className="flex flex-col p-6 relative min-h-0 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-8">
-               
-               {/* Timeline Background Overlay */}
-               <div className="absolute inset-x-0 bottom-0 h-full pointer-events-none flex items-end opacity-[0.03] z-0">
-                  {timelineBars}
-               </div>
+          <div className={cn("flex flex-col p-6 md:p-8 relative min-h-0 transition-opacity duration-700 pb-8", isCollapsed ? "opacity-0 pointer-events-none" : "opacity-100")}>
+             
+             {/* Timeline Background Overlay */}
+             <div className="absolute inset-x-0 bottom-0 h-full pointer-events-none flex items-end opacity-[0.03] z-0">
+                {timelineBars}
+             </div>
 
-               {/* Stats Section */}
-               <div className="flex flex-col z-10 space-y-4">
-                  <div className="flex items-center justify-between mb-2">
-                     <h3 className="text-[10px] md:text-xs font-black uppercase tracking-widest text-[var(--text-muted)]">Live Network Analytics</h3>
-                     <span className="text-[9px] font-black uppercase bg-[var(--primary-10)] px-2 py-0.5 rounded text-[var(--primary)] flex items-center gap-1"><Lock size={10}/> E2E Secured</span>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 w-full">
-                     <div className="bg-[var(--bg-main)] p-3 md:p-4 rounded-xl border border-[var(--border-main)] hover:border-[var(--primary-30)] hover:bg-[var(--primary-10)] transition-all group flex flex-col justify-center">
-                        <div className="text-[9px] md:text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-1 flex items-center gap-2"><Globe size={12}/> Global Peers</div>
-                        <div className="text-xl md:text-3xl font-black text-[var(--text-main)] group-hover:text-[var(--primary)] transition-colors">{globalStats.activePeers.toLocaleString()}</div>
-                     </div>
+             {/* Stats Section */}
+             <div className="flex flex-col z-10 space-y-5">
+                <div className="flex items-center justify-between mb-2">
+                   <h3 className="text-[10px] md:text-xs font-black uppercase tracking-widest text-[var(--text-muted)]">Live Network Analytics</h3>
+                   <span className="text-[9px] font-black uppercase bg-[var(--primary-10)] px-2 py-0.5 rounded text-[var(--primary)] flex items-center gap-1"><Lock size={10}/> E2E Secured</span>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
+                   <div className="bg-[var(--bg-main)] p-4 md:p-5 rounded-2xl border border-[var(--border-main)] hover:border-[var(--primary-30)] hover:bg-[var(--primary-10)] transition-all group flex flex-col justify-between items-start min-h-[100px]">
+                      <div className="text-[10px] md:text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest flex items-center gap-2"><Globe size={14}/> Global Peers</div>
+                      <div className="text-2xl md:text-4xl font-black text-[var(--text-main)] group-hover:text-[var(--primary)] transition-colors mt-2">{globalStats.activePeers.toLocaleString()}</div>
+                   </div>
 
-                     <div className="bg-[var(--bg-main)] p-3 md:p-4 rounded-xl border border-[var(--border-main)] hover:border-[var(--primary-30)] hover:bg-[var(--primary-10)] transition-all group flex flex-col justify-center">
-                        <div className="text-[9px] md:text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-1 flex items-center gap-2"><Zap size={12}/> Throughput</div>
-                        <div className="text-xl md:text-3xl font-black text-[var(--text-main)] group-hover:text-[var(--primary)] transition-colors">{globalStats.bandwidth.toFixed(2)} <span className="text-xs md:text-sm text-[var(--text-muted)]">MB/s</span></div>
-                     </div>
+                   <div className="bg-[var(--bg-main)] p-4 md:p-5 rounded-2xl border border-[var(--border-main)] hover:border-[var(--primary-30)] hover:bg-[var(--primary-10)] transition-all group flex flex-col justify-between items-start min-h-[100px]">
+                      <div className="text-[10px] md:text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest flex items-center gap-2"><Zap size={14}/> Throughput</div>
+                      <div className="text-2xl md:text-4xl font-black text-[var(--text-main)] group-hover:text-[var(--primary)] transition-colors mt-2">{globalStats.bandwidth.toFixed(2)} <span className="text-xs md:text-sm text-[var(--text-muted)]">MB/s</span></div>
+                   </div>
 
-                     <div className="bg-[var(--bg-main)] p-3 md:p-4 rounded-xl border border-[var(--border-main)] hover:border-[#4ade80]/30 hover:bg-[#4ade80]/10 transition-all group flex flex-col justify-center">
-                        <div className="text-[9px] md:text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-1 flex items-center gap-2"><Database size={12}/> Data Synced</div>
-                        <div className="text-xl md:text-3xl font-black text-[var(--text-main)] group-hover:text-[#4ade80] transition-colors">{globalStats.dataSynced.toFixed(1)} <span className="text-xs md:text-sm text-[var(--text-muted)]">GB</span></div>
-                     </div>
+                   <div className="bg-[var(--bg-main)] p-4 md:p-5 rounded-2xl border border-[var(--border-main)] hover:border-[#4ade80]/30 hover:bg-[#4ade80]/10 transition-all group flex flex-col justify-between items-start min-h-[100px]">
+                      <div className="text-[10px] md:text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest flex items-center gap-2"><Database size={14}/> Data Synced</div>
+                      <div className="text-2xl md:text-4xl font-black text-[var(--text-main)] group-hover:text-[#4ade80] transition-colors mt-2">{globalStats.dataSynced.toFixed(1)} <span className="text-xs md:text-sm text-[var(--text-muted)]">GB</span></div>
+                   </div>
 
-                     <div className="bg-[var(--bg-main)] p-3 md:p-4 rounded-xl border border-[var(--border-main)] hover:border-[#a78bfa]/30 hover:bg-[#a78bfa]/10 transition-all group flex flex-col justify-center">
-                        <div className="text-[9px] md:text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-1 flex items-center gap-2"><Route size={12}/> Bridge Distance</div>
-                        <div className="text-xl md:text-3xl font-black text-[var(--text-main)] group-hover:text-[#a78bfa] transition-colors">{(globalStats.distanceBridged / 1000).toFixed(0)}k <span className="text-xs md:text-sm text-[var(--text-muted)]">km</span></div>
-                     </div>
-                  </div>
-                  
-                  <div className="bg-gradient-to-r from-[var(--primary-20)] to-transparent p-3 md:p-4 rounded-xl border border-[var(--primary-30)] flex flex-row items-center justify-between w-full mt-2">
-                     <div className="flex items-center gap-3">
-                        <Activity className="text-[var(--primary)] animate-pulse hidden sm:block" size={24} />
-                        <div>
-                           <div className="text-[9px] md:text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Files Currently In Transit</div>
-                           <div className="text-lg md:text-xl font-black text-[var(--text-main)]">{globalStats.filesInFlight.toLocaleString()}</div>
-                        </div>
-                     </div>
-                     <div className="px-3 py-1.5 bg-[var(--primary)] text-[var(--primary-content)] text-[9px] md:text-[10px] font-black uppercase rounded-full shadow-[0_0_10px_var(--primary)] flex items-center gap-1"><Activity size={10}/> Real-Time Sync</div>
-                  </div>
-               </div>
-            </div>
-          )}
+                   <div className="bg-[var(--bg-main)] p-4 md:p-5 rounded-2xl border border-[var(--border-main)] hover:border-[#a78bfa]/30 hover:bg-[#a78bfa]/10 transition-all group flex flex-col justify-between items-start min-h-[100px]">
+                      <div className="text-[10px] md:text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest flex items-center gap-2"><Route size={14}/> Bridge Distance</div>
+                      <div className="text-2xl md:text-4xl font-black text-[var(--text-main)] group-hover:text-[#a78bfa] transition-colors mt-2">{(globalStats.distanceBridged / 1000).toFixed(0)}k <span className="text-xs md:text-sm text-[var(--text-muted)]">km</span></div>
+                   </div>
+                </div>
+                
+                <div className="bg-gradient-to-r from-[var(--primary-20)] to-[var(--bg-main)] p-4 md:p-6 rounded-2xl border border-[var(--primary-30)] flex flex-col sm:flex-row items-start sm:items-center justify-between w-full mt-2 gap-4">
+                   <div className="flex items-center gap-4">
+                      <div className="p-3 bg-[var(--primary-10)] rounded-xl border border-[var(--primary-20)] shadow-inner">
+                         <Activity className="text-[var(--primary)] animate-pulse" size={24} />
+                      </div>
+                      <div>
+                         <div className="text-[10px] md:text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-1">Files Currently In Transit</div>
+                         <div className="text-2xl md:text-3xl font-black text-[var(--text-main)]">{globalStats.filesInFlight.toLocaleString()}</div>
+                      </div>
+                   </div>
+                   <div className="px-5 py-2.5 bg-[var(--primary)] text-[var(--primary-content)] text-[10px] md:text-[11px] font-black uppercase rounded-full shadow-[0_0_15px_var(--primary-50)] flex items-center gap-2 whitespace-nowrap w-full sm:w-auto justify-center"><Activity size={14}/> Real-Time Sync</div>
+                </div>
+             </div>
+          </div>
        </div>
 
        {/* Top Border Accent */}

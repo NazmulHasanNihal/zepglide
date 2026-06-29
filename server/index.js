@@ -1,5 +1,6 @@
 import express from 'express';
 import { createServer } from 'http';
+import crypto from 'crypto';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import { supabase } from './supabase.js';
@@ -9,7 +10,55 @@ const httpServer = createServer(app);
 const port = process.env.PORT || 3001;
 
 app.use(cors({ origin: '*' }));
-app.use(express.json());
+app.use(express.json({
+    verify: (req, res, buf) => {
+        req.rawBody = buf;
+    }
+}));
+
+// --- Lemon Squeezy Webhook ---
+app.post('/api/webhooks/lemonsqueezy', async (req, res) => {
+    const secret = process.env.LEMON_SQUEEZY_WEBHOOK_SECRET;
+    if (!secret) return res.status(500).send('Webhook secret not configured');
+
+    const signature = req.headers['x-signature'];
+    
+    try {
+        // Verify signature
+        const hmac = crypto.createHmac('sha256', secret);
+        const digest = Buffer.from(hmac.update(req.rawBody).digest('hex'), 'utf8');
+        const signatureBuffer = Buffer.from(signature || '', 'utf8');
+
+        if (digest.length !== signatureBuffer.length || !crypto.timingSafeEqual(digest, signatureBuffer)) {
+            return res.status(401).send('Invalid signature');
+        }
+
+        const payload = req.body;
+        const eventName = payload.meta.event_name;
+        const customData = payload.meta.custom_data || {};
+        
+        // We expect the user's id in custom_data.user_id when they checkout
+        const userId = customData.user_id;
+        
+        if (!userId) {
+            return res.status(200).send('No user_id found in custom_data, ignoring');
+        }
+
+        if (eventName === 'subscription_created' || eventName === 'subscription_updated') {
+            const variantName = payload.data.attributes.variant_name || '';
+            let plan = 'Pro';
+            if (variantName.toLowerCase().includes('teams')) plan = 'Teams';
+
+            await supabase.from('users').update({ plan: plan }).eq('id', userId);
+        } else if (eventName === 'subscription_cancelled' || eventName === 'subscription_expired') {
+            await supabase.from('users').update({ plan: 'Free' }).eq('id', userId);
+        }
+        res.status(200).send('Webhook processed');
+    } catch (e) {
+        console.error('Webhook processing error:', e);
+        res.status(500).send('Internal Server Error');
+    }
+});
 
 // --- Socket.IO Signaling Engine (merged from signaling-server) ---
 const io = new Server(httpServer, {
@@ -22,6 +71,7 @@ const roomData = {};
 let totalDataSynced = 0; // in MB
 let totalTransfersCount = 0;
 const activeNodes = {}; // socket.id -> { speed: number, lastUpdate: number }
+let globalCurrentBandwidth = 0;
 
 let globalConfig = { maintenance_mode: false, max_transfer_size: '50' };
 
@@ -94,9 +144,10 @@ io.on('connection', (socket) => {
         const pin = typeof payload === 'string' ? payload : payload.pin;
         const password = payload.password || null;
         const isMultiPeer = payload.isMultiPeer || false;
+        const branding = payload.branding || null;
 
         socket.join(pin);
-        roomData[pin] = { ownerId: socket.id, password, isMultiPeer };
+        roomData[pin] = { ownerId: socket.id, password, isMultiPeer, branding };
         console.log(`[ROOM] Created: ${pin} (MultiPeer: ${isMultiPeer}, Password: ${!!password})`);
     });
 
@@ -120,6 +171,7 @@ io.on('connection', (socket) => {
         socket.join(pin);
         console.log(`[ROOM] Node ${socket.id} joined: ${pin}`);
         io.to(rData.ownerId).emit('peer-joined', { receiverId: socket.id });
+        socket.emit('room-joined', { branding: rData.branding });
     });
 
     socket.on('signal', ({ pin, targetId, signalData }) => {
@@ -145,13 +197,13 @@ io.on('connection', (socket) => {
 
 setInterval(() => {
     const now = Date.now();
-    let currentBandwidth = 0;
+    globalCurrentBandwidth = 0;
     let activePeers = io.engine.clientsCount;
     let filesInFlight = Object.keys(roomData).length;
 
     for (const id in activeNodes) {
         if (now - activeNodes[id].lastUpdate < 3000) {
-            currentBandwidth += activeNodes[id].speed;
+            globalCurrentBandwidth += activeNodes[id].speed;
         } else {
             delete activeNodes[id];
         }
@@ -159,10 +211,10 @@ setInterval(() => {
 
     io.to('global-hub').emit('hub-stats', {
         activePeers,
-        bandwidth: currentBandwidth,
+        bandwidth: globalCurrentBandwidth,
         filesInFlight,
         dataSynced: totalDataSynced / 1024,
-        distanceBridged: activePeers * 350,
+        distanceBridged: 0,
         totalTransfers: totalTransfersCount
     });
 }, 2000);
@@ -595,13 +647,14 @@ app.get('/api/admin/metrics', async (req, res) => {
     const { count: transferCount } = await supabase.from('transfers').select('*', { count: 'exact', head: true });
 
     res.json({
-      activeTransfers: transferCount || 0,
-      nodesOnline: userCount || 0,
-      trafficRate: '--',
-      health: 'Optimal'
+      activeTransfers: Object.keys(roomData).length || 0,
+      nodesOnline: io.engine.clientsCount || 0,
+      trafficRate: `${globalCurrentBandwidth.toFixed(2)} MB/s`,
+      health: 'Optimal',
+      dataSynced: totalDataSynced / 1024
     });
   } catch (err) {
-    res.json({ activeTransfers: 0, nodesOnline: 0, trafficRate: '0 req/s', health: 'Error' });
+    res.json({ activeTransfers: 0, nodesOnline: 0, trafficRate: '0 MB/s', health: 'Error', dataSynced: 0 });
   }
 });
 
