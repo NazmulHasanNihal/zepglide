@@ -295,6 +295,10 @@ export function useWebRTC() {
                 transferredBytesRef.current = 0;
                 metadataRef.current = null;
             }
+        }).catch(err => {
+            console.error('[WebRTC] Receiver promise chain crashed (likely Out of Quota). Attempting to recover:', err);
+            // Must return resolved promise to un-brick the promise chain for future chunks
+            return Promise.resolve();
         });
     }, []);
 
