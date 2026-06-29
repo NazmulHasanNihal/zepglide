@@ -242,10 +242,15 @@ setInterval(() => {
     globalCurrentBandwidth = 0;
     let activePeers = io.engine.clientsCount;
     let filesInFlight = Object.keys(roomData).length;
+    let activeCountries = {};
 
     for (const id in activeNodes) {
         if (now - activeNodes[id].lastUpdate < 3000) {
             globalCurrentBandwidth += activeNodes[id].speed;
+            const cc = activeNodes[id].country || 'Unknown';
+            if (cc !== 'Unknown') {
+                activeCountries[cc] = (activeCountries[cc] || 0) + 1;
+            }
         } else {
             delete activeNodes[id];
         }
@@ -257,7 +262,8 @@ setInterval(() => {
         filesInFlight,
         dataSynced: totalDataSynced / 1024,
         distanceBridged: 0,
-        totalTransfers: totalTransfersCount
+        totalTransfers: totalTransfersCount,
+        activeCountries
     });
 }, 2000);
 

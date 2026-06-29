@@ -22,12 +22,21 @@ export default function ReceiveView({ showToast }) {
   useEffect(() => {
     if (status === 'success' && receivedFile) {
       const files = Array.isArray(receivedFile) ? receivedFile : [receivedFile];
-      files.forEach(f => {
+      let delay = 0;
+      files.forEach((f) => {
           if (!f.savedToDisk) {
-              const a = document.createElement('a');
-              a.href = f.url;
-              a.download = f.name;
-              a.click();
+              setTimeout(() => {
+                  const a = document.createElement('a');
+                  a.href = f.url;
+                  a.download = f.name;
+                  a.style.display = 'none';
+                  document.body.appendChild(a);
+                  a.click();
+                  setTimeout(() => {
+                      document.body.removeChild(a);
+                  }, 100);
+              }, delay);
+              delay += 500; // Stagger downloads to prevent browser blocking
           }
       });
     }
@@ -336,11 +345,18 @@ export default function ReceiveView({ showToast }) {
                 {Array.isArray(receivedFile) && receivedFile.length > 1 && receivedFile.some(f => !f.savedToDisk) && (
                   <button 
                     onClick={() => {
+                        let delay = 0;
                         receivedFile.filter(f => !f.savedToDisk).forEach(f => {
-                            const a = document.createElement('a');
-                            a.href = f.url;
-                            a.download = f.name;
-                            a.click();
+                            setTimeout(() => {
+                                const a = document.createElement('a');
+                                a.href = f.url;
+                                a.download = f.name;
+                                a.style.display = 'none';
+                                document.body.appendChild(a);
+                                a.click();
+                                setTimeout(() => document.body.removeChild(a), 100);
+                            }, delay);
+                            delay += 500;
                         });
                     }}
                     className="flex-1 bg-[var(--primary)] text-white hover:brightness-110 active:scale-95 font-black py-4 rounded-2xl transition-all duration-300 uppercase tracking-widest text-[10px] shadow-xl flex items-center justify-center gap-2"

@@ -106,6 +106,19 @@ const GlobalMapView = () => {
     socket.emit('join-hub');
     socket.on('hub-stats', (stats) => {
       setGlobalStats(stats);
+      if (stats.activeCountries) {
+        const regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
+        const mappedData = {};
+        for (const [code, count] of Object.entries(stats.activeCountries)) {
+            try {
+                const fullName = regionNames.of(code);
+                mappedData[fullName] = count;
+            } catch (e) {
+                mappedData[code] = count;
+            }
+        }
+        setCountryUsers(mappedData);
+      }
     });
 
     return () => socket.disconnect();
@@ -220,32 +233,7 @@ const GlobalMapView = () => {
 
   useEffect(() => {
     if (!isLoaded || countryAnchors.length === 0) return;
-    
-    const fetchMapData = async () => {
-      try {
-        const res = await fetch((import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? 'https://zepglide.onrender.com' : '')) + '/api/map');
-        const data = await res.json();
-        
-        // Convert ISO codes to full country names to match SVG paths
-        const regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
-        const mappedData = {};
-        for (const [code, count] of Object.entries(data)) {
-            try {
-                const fullName = regionNames.of(code);
-                mappedData[fullName] = count;
-            } catch (e) {
-                mappedData[code] = count;
-            }
-        }
-        setCountryUsers(mappedData);
-      } catch (err) {
-         console.error('Failed to fetch map data', err);
-      }
-    };
-    
-    fetchMapData();
-    const interval = setInterval(fetchMapData, 10000);
-    return () => clearInterval(interval);
+    // Map data is now delivered instantly via WebSocket hub-stats event.
   }, [isLoaded, countryAnchors]);
 
   // Generate Animated Arcs
