@@ -439,6 +439,33 @@ app.post('/api/transfers', async (req, res) => {
 
   res.json({ success: true, transfer: { ...data, to: data?.recipient || (to || 'Unknown') } });
 });
+
+// --- AUTOMATIC HISTORY CLEANUP ---
+// Purges transfer history older than 30 days to conserve database space
+async function cleanupOldHistory() {
+  try {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const { error, count } = await supabase
+      .from('transfers')
+      .delete()
+      .lt('created_at', thirtyDaysAgo.toISOString());
+      
+    if (error) {
+      console.error('[Cleanup] Failed to purge old history:', error.message);
+    } else {
+      console.log('[Cleanup] 30-day transfer history retention applied.');
+    }
+  } catch (err) {
+    console.error('[Cleanup] Error running history cleanup:', err);
+  }
+}
+
+// Run once on startup, then every 24 hours
+cleanupOldHistory();
+setInterval(cleanupOldHistory, 24 * 60 * 60 * 1000);
+
 // --- GLOBAL STATS (For Global Hub) ---
 app.get('/api/global-stats', async (req, res) => {
   try {
