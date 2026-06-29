@@ -86,6 +86,7 @@ export function useWebRTC() {
     const dataChannelsRef = useRef({});
     const fileBufferRef = useRef([]);
     const transferredBytesRef = useRef(0);
+    const receiverAckedBytesRef = useRef(0);
     const totalSizeRef = useRef(0);
     const lastBytesRef = useRef(0);
     const lastTimeRef = useRef(0);
@@ -169,6 +170,8 @@ export function useWebRTC() {
                     setStatus('awaiting_approval');
                 } else if (msg.type === 'cancel') {
                     doCancel();
+                } else if (msg.type === 'ack') {
+                    receiverAckedBytesRef.current = msg.bytes;
                 }
             } catch (e) {
                 console.error('[WebRTC] Failed to parse message:', e);
@@ -236,6 +239,16 @@ export function useWebRTC() {
                     setProgress(Math.round((transferredBytesRef.current / totalSizeRef.current) * 100));
                     lastProgressTimeRef.current = now;
                 }
+            }
+
+            // Send software ACK for backpressure pacing
+            if (!isInitiatorRef.current) {
+                const ackStr = JSON.stringify({ type: 'ack', bytes: transferredBytesRef.current });
+                Object.values(dataChannelsRef.current).forEach(dc => {
+                    if (dc.readyState === 'open') {
+                        try { dc.send(ackStr); } catch (e) {}
+                    }
+                });
             }
 
             // Only execute completion once (metadataRef.current will be set to null)
@@ -634,6 +647,7 @@ export function useWebRTC() {
 
             const file = filesArray[i];
             transferredBytesRef.current = 0;
+            receiverAckedBytesRef.current = 0;
             totalSizeRef.current = file.size;
             setProgress(0);
 
@@ -756,6 +770,13 @@ export function useWebRTC() {
 
                     for (const dc of openChannels) {
                         if (dc.readyState !== 'open') continue;
+                        
+                        // Software ACK backpressure - pause if Receiver is too far behind
+                        while (transferredBytesRef.current - receiverAckedBytesRef.current > HIGH_WATER_MARK) {
+                            if (isCancelledRef.current) break;
+                            await new Promise(r => setTimeout(r, 10));
+                        }
+
                         // HIGH WATER MARK backpressure — pure event-driven
                         if (dc.bufferedAmount > HIGH_WATER_MARK) {
                             await waitForDrain(dc);
