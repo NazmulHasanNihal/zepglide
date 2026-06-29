@@ -154,7 +154,7 @@ export default function ProfileView({ onLogout, profile, isAdmin, onEditClick, s
                    <span className="px-3 md:px-4 py-1 bg-[var(--primary-10)] text-[var(--primary)] border border-[var(--primary-20)] text-[9px] md:text-[10px] font-black uppercase tracking-widest rounded-full shadow-sm flex items-center gap-1.5"><Shield size={12} /> Secure</span>
                  </div>
 
-                 <p className="text-sm md:text-base font-bold text-[var(--text-muted)] italic max-w-md leading-relaxed opacity-80 decoration-[var(--primary-30)] underline decoration-2 underline-offset-4">"{profile.bio || 'No bio set yet.'}"</p>
+                 <p className="text-sm md:text-base font-bold text-[var(--text-muted)] italic max-w-md leading-relaxed opacity-80 decoration-[var(--primary-30)] underline decoration-2 underline-offset-4">&quot;{profile.bio || 'No bio set yet.'}&quot;</p>
 
                  {/* Profile Completeness Bar */}
                  <div className="flex flex-col gap-2 mt-2 max-w-md w-full">
