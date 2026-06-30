@@ -43,32 +43,34 @@ const ICE_SERVERS = [
     // Google STUN (fast, free, reliable)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-    // Metered.ca free TURN servers — enables relay when direct P2P fails
+    
+    // OpenRelay Project free TURN servers — enables relay when direct P2P fails
     // (symmetric NAT, mobile LTE, corporate firewalls, double-NAT)
     {
-        urls: 'turn:a.relay.metered.ca:80',
-        username: 'e8dd65b92f27a4cebf721845',
-        credential: '2D7JvfXYZJHjNgy3'
+        urls: 'turn:openrelay.metered.ca:80',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
     },
     {
-        urls: 'turn:a.relay.metered.ca:80?transport=tcp',
-        username: 'e8dd65b92f27a4cebf721845',
-        credential: '2D7JvfXYZJHjNgy3'
+        urls: 'turn:openrelay.metered.ca:443',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
     },
     {
-        urls: 'turn:a.relay.metered.ca:443',
-        username: 'e8dd65b92f27a4cebf721845',
-        credential: '2D7JvfXYZJHjNgy3'
-    },
-    {
-        urls: 'turns:a.relay.metered.ca:443?transport=tcp',
-        username: 'e8dd65b92f27a4cebf721845',
-        credential: '2D7JvfXYZJHjNgy3'
+        urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
     }
 ];
+
+// Add custom TURN server if provided in Vercel/Render env vars
+if (import.meta.env.VITE_TURN_URL) {
+    ICE_SERVERS.push({
+        urls: import.meta.env.VITE_TURN_URL,
+        username: import.meta.env.VITE_TURN_USERNAME,
+        credential: import.meta.env.VITE_TURN_PASSWORD
+    });
+}
 
 export function useWebRTC() {
     const [progress, setProgress] = useState(0);
