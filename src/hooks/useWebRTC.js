@@ -170,6 +170,10 @@ export function useWebRTC() {
                     transferredBytesRef.current = 0;
                     setProgress(0);
                     setStatus('awaiting_approval');
+                    // CLEAR OLD GARBAGE TO PREVENT CORRUPTION AND FREEZES
+                    try {
+                        localforage.clear();
+                    } catch(e) {}
                 } else if (msg.type === 'cancel') {
                     doCancel();
                 } else if (msg.type === 'ack') {
@@ -185,7 +189,7 @@ export function useWebRTC() {
         }
 
         let chunkData = data;
-        if (cryptoKeyRef.current) {
+        if (cryptoKeyRef.current && data.eof !== true) {
             try {
                 const iv = new Uint8Array(data.slice(0, 12));
                 const ciphertext = data.slice(12);
@@ -714,103 +718,110 @@ export function useWebRTC() {
 
             let yieldCounter = 0;
 
-            while (true) {
-                if (isCancelledRef.current) break;
-
-                // Handle pause
-                while (isPausedRef.current) {
-                    if (isCancelledRef.current) break;
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                }
-                if (isCancelledRef.current) break;
-
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                // Send the stream chunk in SEND_CHUNK_SIZE pieces
-                let offset = 0;
-                while (offset < value.byteLength) {
+            try {
+                while (true) {
                     if (isCancelledRef.current) break;
 
-                    const end = Math.min(offset + SEND_CHUNK_SIZE, value.byteLength);
-                    
-                    // Yield event loop every ~4MB to allow GC and UI updates (prevents freeze)
-                    yieldCounter += (end - offset);
-                    if (yieldCounter > 4 * 1024 * 1024) {
-                        await new Promise(r => setTimeout(r, 0));
-                        yieldCounter = 0;
+                    // Handle pause
+                    while (isPausedRef.current) {
+                        if (isCancelledRef.current) break;
+                        await new Promise(resolve => setTimeout(resolve, 100));
                     }
+                    if (isCancelledRef.current) break;
 
-                    // Create an ArrayBuffer slice directly for 100% browser/mobile compatibility
-                    let chunkBuffer = value.buffer.slice(value.byteOffset + offset, value.byteOffset + end);
-                    const originalChunkSize = chunkBuffer.byteLength;
+                    const { done, value } = await reader.read();
+                    if (done) break;
 
-                    if (cryptoKeyRef.current) {
-                        const iv = window.crypto.getRandomValues(new Uint8Array(12));
-                        const ciphertext = await window.crypto.subtle.encrypt(
-                            { name: 'AES-GCM', iv }, 
-                            cryptoKeyRef.current, 
-                            chunkBuffer
-                        );
-                        const payload = new Uint8Array(iv.length + ciphertext.byteLength);
-                        payload.set(iv, 0);
-                        payload.set(new Uint8Array(ciphertext), iv.length);
-                        chunkBuffer = payload.buffer;
-                    }
+                    // Send the stream chunk in SEND_CHUNK_SIZE pieces
+                    let offset = 0;
+                    while (offset < value.byteLength) {
+                        if (isCancelledRef.current) break;
 
-                    // Get all open channels, skip dead ones
-                    let openChannels = channels.filter(dc => dc.readyState === 'open');
-                    if (openChannels.length === 0) {
-                        // All channels closed — wait briefly for reconnection
-                        console.warn('[WebRTC] No open channels, waiting for reconnection...');
-                        let waitCount = 0;
-                        while (waitCount < 100) { // Wait up to ~10 seconds
-                            await new Promise(r => setTimeout(r, 100));
-                            const recovered = Object.values(dataChannelsRef.current).filter(dc => dc.readyState === 'open');
-                            if (recovered.length > 0) {
-                                channels.length = 0;
-                                channels.push(...recovered);
-                                openChannels = recovered; // Use recovered channels for THIS chunk
-                                break;
-                            }
-                            if (isCancelledRef.current) break;
-                            waitCount++;
-                        }
-                        if (isCancelledRef.current || openChannels.length === 0) break;
-                    }
-
-                    for (const dc of openChannels) {
-                        if (dc.readyState !== 'open') continue;
+                        const end = Math.min(offset + SEND_CHUNK_SIZE, value.byteLength);
                         
-                        // Software ACK backpressure - pause if Receiver is too far behind
-                        while (transferredBytesRef.current - receiverAckedBytesRef.current > HIGH_WATER_MARK) {
-                            if (isCancelledRef.current) break;
-                            await new Promise(r => setTimeout(r, 10));
+                        // Yield event loop every ~4MB to allow GC and UI updates (prevents freeze)
+                        yieldCounter += (end - offset);
+                        if (yieldCounter > 4 * 1024 * 1024) {
+                            await new Promise(r => setTimeout(r, 0));
+                            yieldCounter = 0;
                         }
 
-                        // HIGH WATER MARK backpressure — pure event-driven
-                        if (dc.bufferedAmount > HIGH_WATER_MARK) {
-                            await waitForDrain(dc);
+                        // Create an ArrayBuffer slice directly for 100% browser/mobile compatibility
+                        let chunkBuffer = value.buffer.slice(value.byteOffset + offset, value.byteOffset + end);
+                        const originalChunkSize = chunkBuffer.byteLength;
+
+                        if (cryptoKeyRef.current) {
+                            const iv = window.crypto.getRandomValues(new Uint8Array(12));
+                            const ciphertext = await window.crypto.subtle.encrypt(
+                                { name: 'AES-GCM', iv }, 
+                                cryptoKeyRef.current, 
+                                chunkBuffer
+                            );
+                            const payload = new Uint8Array(iv.length + ciphertext.byteLength);
+                            payload.set(iv, 0);
+                            payload.set(new Uint8Array(ciphertext), iv.length);
+                            chunkBuffer = payload.buffer;
                         }
 
-                        try {
-                            dc.send(chunkBuffer);
-                        } catch (sendErr) {
-                            console.error('[WebRTC] dc.send() failed:', sendErr);
-                            // Channel died mid-send — will be caught on next iteration
+                        // Get all open channels, skip dead ones
+                        let openChannels = channels.filter(dc => dc.readyState === 'open');
+                        if (openChannels.length === 0) {
+                            // All channels closed — wait briefly for reconnection
+                            console.warn('[WebRTC] No open channels, waiting for reconnection...');
+                            let waitCount = 0;
+                            while (waitCount < 100) { // Wait up to ~10 seconds
+                                await new Promise(r => setTimeout(r, 100));
+                                const recovered = Object.values(dataChannelsRef.current).filter(dc => dc.readyState === 'open');
+                                if (recovered.length > 0) {
+                                    channels.length = 0;
+                                    channels.push(...recovered);
+                                    openChannels = recovered; // Use recovered channels for THIS chunk
+                                    break;
+                                }
+                                if (isCancelledRef.current) break;
+                                waitCount++;
+                            }
+                            if (isCancelledRef.current || openChannels.length === 0) break;
                         }
+
+                        for (const dc of openChannels) {
+                            if (dc.readyState !== 'open') continue;
+                            
+                            // Software ACK backpressure - pause if Receiver is too far behind
+                            while (transferredBytesRef.current - receiverAckedBytesRef.current > HIGH_WATER_MARK) {
+                                if (isCancelledRef.current) break;
+                                await new Promise(r => setTimeout(r, 10));
+                            }
+
+                            // HIGH WATER MARK backpressure — pure event-driven
+                            if (dc.bufferedAmount > HIGH_WATER_MARK) {
+                                await waitForDrain(dc);
+                            }
+
+                            try {
+                                dc.send(chunkBuffer);
+                            } catch (sendErr) {
+                                console.error('[WebRTC] dc.send() failed:', sendErr);
+                                // Channel died mid-send — will be caught on next iteration
+                            }
+                        }
+
+                        offset = end;
+                        transferredBytesRef.current += originalChunkSize;
                     }
 
-                    offset = end;
-                    transferredBytesRef.current += originalChunkSize;
+                    // Throttle UI updates to avoid React re-renders choking the send loop
+                    const now = Date.now();
+                    if (now - lastProgressTimeRef.current > UI_THROTTLE_MS) {
+                        setProgress(Math.round((transferredBytesRef.current / file.size) * 100));
+                        lastProgressTimeRef.current = now;
+                    }
                 }
-
-                // Throttle UI updates to avoid React re-renders choking the send loop
-                const now = Date.now();
-                if (now - lastProgressTimeRef.current > UI_THROTTLE_MS) {
-                    setProgress(Math.round((transferredBytesRef.current / file.size) * 100));
-                    lastProgressTimeRef.current = now;
-                }
+            } catch (err) {
+                console.error('[WebRTC] Error during send stream loop:', err);
+                setStatus('error');
+                setErrorMsg('Error reading or encrypting file chunk: ' + err.message);
+                return;
             }
 
             // Ensure final 100% is displayed
