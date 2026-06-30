@@ -7,7 +7,7 @@ export default function ReceiveView({ showToast }) {
   const [pin, setPin] = useState('');
   const [password, setPassword] = useState('');
   const [isScanning, setIsScanning] = useState(false);
-  const { status, progress, speed, eta, metadata, receivedFile, errorMsg, joinSession, acceptTransfer, cancelTransfer, retryTransfer, isSocketConnected, fingerprint, branding } = useWebRTC();
+  const { status, progress, speed, eta, metadata, receivedFile, errorMsg, joinSession, acceptTransfer, cancelTransfer, retryTransfer, isSocketConnected, fingerprint, branding, requestWakeLock, releaseWakeLock } = useWebRTC();
   
   const facts = ["Bypassing Symmetric NAT...", "Establishing Quantum-Safe Keys...", "Securing P2P WebRTC Layer...", "Discovering Mesh Route..."];
   const [factIndex, setFactIndex] = useState(0);
@@ -76,6 +76,7 @@ export default function ReceiveView({ showToast }) {
   const handleJoin = () => {
     const cleanPin = pin.replace(/\s/g, '');
     if (cleanPin.length === 6) {
+      requestWakeLock();
       joinSession(cleanPin, password);
     } else {
       showToast("Please enter a 6-digit PIN", "info");
@@ -216,13 +217,13 @@ export default function ReceiveView({ showToast }) {
               </p>
               
               <button 
-                onClick={acceptTransfer}
+                onClick={() => { requestWakeLock(); acceptTransfer(); }}
                 className="w-full bg-[var(--primary)] text-white hover:brightness-110 px-8 py-4 mb-4 rounded-xl font-black text-xs uppercase tracking-widest transition-all duration-300 shadow-xl active:scale-95 flex items-center justify-center gap-2"
               >
                 <Download size={16} /> Accept & Save
               </button>
               <button 
-                onClick={cancelTransfer}
+                onClick={() => { releaseWakeLock(); cancelTransfer(); }}
                 className="w-full text-[var(--text-muted)] hover:text-[var(--danger)] hover:bg-[var(--danger-10)] px-8 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all duration-300 active:scale-95"
               >
                 Decline
@@ -244,6 +245,7 @@ export default function ReceiveView({ showToast }) {
                     <button 
                       disabled={!isSocketConnected}
                       onClick={() => {
+                          requestWakeLock();
                           retryTransfer();
                           if (pin.length === 6) joinSession(pin, password);
                       }}

@@ -15,7 +15,7 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
   const [sessionStarted, setSessionStarted] = useState(false);
   const [encryptionKey, setEncryptionKey] = useState('');
 
-  const { status, progress, speed, eta, startSession, sendFiles, cancelTransfer, pauseTransfer, resumeTransfer, retryTransfer, isSocketConnected, fingerprint } = useWebRTC();
+  const { status, progress, speed, eta, startSession, sendFiles, cancelTransfer, pauseTransfer, resumeTransfer, retryTransfer, isSocketConnected, fingerprint, requestWakeLock, releaseWakeLock } = useWebRTC();
   const fileInputRef = React.useRef(null);
   const [cancelStep, setCancelStep] = useState(0);
 
@@ -93,11 +93,14 @@ export default function SendView({ profile, isAuthenticated, showToast, globalDr
     setPin('');
     setSessionStarted(false);
     setRoutingState('idle');
+    releaseWakeLock();
   };
 
   // Generate PIN and start signaling session
   const handleReadyToSend = () => {
     if (rawFiles.length === 0) return;
+    
+    requestWakeLock();
     
     const newPin = Math.floor(100000 + Math.random() * 900000).toString();
     

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { io } from 'socket.io-client';
 import localforage from 'localforage';
+import NoSleep from 'nosleep.js';
 
 localforage.config({
     name: 'Zepglide',
@@ -107,39 +108,42 @@ export function useWebRTC() {
     const sessionPinRef = useRef(null);      // Store the active session PIN for ICE restarts
     const isInitiatorRef = useRef(false);    // Whether this peer is the initiator
     const countryCodeRef = useRef('US');     // Fallback to US, fetched dynamically below
-    const wakeLockRef = useRef(null);
+    const noSleepRef = useRef(null);
 
-    // --- Screen Wake Lock API ---
-    const requestWakeLock = useCallback(async () => {
-        if ('wakeLock' in navigator) {
-            try {
-                wakeLockRef.current = await navigator.wakeLock.request('screen');
-                wakeLockRef.current.addEventListener('release', () => {
-                    console.log('[Wake Lock] Screen Wake Lock released');
-                });
-                console.log('[Wake Lock] Screen Wake Lock acquired');
-            } catch (err) {
-                console.error(`[Wake Lock] Error: ${err.name}, ${err.message}`);
-            }
-        }
-    }, []);
-
-    const releaseWakeLock = useCallback(async () => {
-        if (wakeLockRef.current !== null) {
-            try {
-                await wakeLockRef.current.release();
-                wakeLockRef.current = null;
-            } catch (err) {
-                console.error(`[Wake Lock] Release Error: ${err.message}`);
-            }
-        }
-    }, []);
-
-    // Re-acquire wake lock if user switches tabs and comes back
+    // Initialize NoSleep once
     useEffect(() => {
-        const handleVisibilityChange = async () => {
-            if (wakeLockRef.current !== null && document.visibilityState === 'visible') {
-                await requestWakeLock();
+        noSleepRef.current = new NoSleep();
+        return () => {
+            if (noSleepRef.current) {
+                noSleepRef.current.disable();
+            }
+        };
+    }, []);
+
+    // --- Screen Wake Lock API (via nosleep.js) ---
+    // Note: To work reliably on iOS/Safari, this MUST be called as a direct result of a user interaction (e.g. onClick).
+    const requestWakeLock = useCallback(() => {
+        if (noSleepRef.current && !noSleepRef.current.isEnabled) {
+            noSleepRef.current.enable().then(() => {
+                console.log('[Wake Lock] NoSleep enabled (screen will stay awake)');
+            }).catch(err => {
+                console.warn('[Wake Lock] NoSleep enable failed (likely missing user gesture):', err);
+            });
+        }
+    }, []);
+
+    const releaseWakeLock = useCallback(() => {
+        if (noSleepRef.current && noSleepRef.current.isEnabled) {
+            noSleepRef.current.disable();
+            console.log('[Wake Lock] NoSleep disabled');
+        }
+    }, []);
+
+    // Re-acquire wake lock if user switches tabs and comes back (only if it was already enabled previously)
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (noSleepRef.current && noSleepRef.current.isEnabled && document.visibilityState === 'visible') {
+                requestWakeLock();
             }
         };
         document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -1027,6 +1031,7 @@ export function useWebRTC() {
 
     return {
         status, progress, speed, eta, metadata, receivedFile, errorMsg, isSocketConnected, fingerprint, branding,
-        startSession, joinSession, acceptTransfer, sendFiles, cancelTransfer, pauseTransfer, resumeTransfer, retryTransfer
+        startSession, joinSession, acceptTransfer, sendFiles, cancelTransfer, pauseTransfer, resumeTransfer, retryTransfer,
+        requestWakeLock, releaseWakeLock
     };
 }
