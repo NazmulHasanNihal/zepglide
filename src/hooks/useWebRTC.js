@@ -27,9 +27,9 @@ const importKey = async (hexKey) => {
 };
 
 // --- High-Performance Transfer Constants ---
-const SEND_CHUNK_SIZE = 16384;            // 16KB — maximum safe size for WebRTC over TURN to prevent drops
-const HIGH_WATER_MARK = 2 * 1024 * 1024;  // 2MB — prevents SCTP overflow and memory spikes
-const LOW_WATER_MARK = 512 * 1024;        // 512KB — resume threshold
+const SEND_CHUNK_SIZE = 65536;            // 64KB — optimal CPU efficiency for WebCrypto
+const HIGH_WATER_MARK = 4 * 1024 * 1024;  // 4MB — lightweight SCTP buffer
+const LOW_WATER_MARK = 1 * 1024 * 1024;   // 1MB — resume threshold
 const UI_THROTTLE_MS = 150;               // Update progress bar ~7x/sec (less React overhead)
 const MAX_ICE_RESTARTS = 3;               // Max ICE restart attempts before giving up
 const ICE_RESTART_DELAY_MS = 1500;        // Wait before attempting ICE restart
@@ -107,6 +107,44 @@ export function useWebRTC() {
     const sessionPinRef = useRef(null);      // Store the active session PIN for ICE restarts
     const isInitiatorRef = useRef(false);    // Whether this peer is the initiator
     const countryCodeRef = useRef('US');     // Fallback to US, fetched dynamically below
+    const wakeLockRef = useRef(null);
+
+    // --- Screen Wake Lock API ---
+    const requestWakeLock = useCallback(async () => {
+        if ('wakeLock' in navigator) {
+            try {
+                wakeLockRef.current = await navigator.wakeLock.request('screen');
+                wakeLockRef.current.addEventListener('release', () => {
+                    console.log('[Wake Lock] Screen Wake Lock released');
+                });
+                console.log('[Wake Lock] Screen Wake Lock acquired');
+            } catch (err) {
+                console.error(`[Wake Lock] Error: ${err.name}, ${err.message}`);
+            }
+        }
+    }, []);
+
+    const releaseWakeLock = useCallback(async () => {
+        if (wakeLockRef.current !== null) {
+            try {
+                await wakeLockRef.current.release();
+                wakeLockRef.current = null;
+            } catch (err) {
+                console.error(`[Wake Lock] Release Error: ${err.message}`);
+            }
+        }
+    }, []);
+
+    // Re-acquire wake lock if user switches tabs and comes back
+    useEffect(() => {
+        const handleVisibilityChange = async () => {
+            if (wakeLockRef.current !== null && document.visibilityState === 'visible') {
+                await requestWakeLock();
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    }, [requestWakeLock]);
 
     // Keep statusRef in sync
     useEffect(() => { statusRef.current = status; }, [status]);
@@ -299,6 +337,7 @@ export function useWebRTC() {
 
                 if (currentMeta.index === currentMeta.totalCount - 1) {
                     setStatus('success');
+                    releaseWakeLock();
                 }
                 
                 writePromiseRef.current = Promise.resolve();
@@ -311,7 +350,7 @@ export function useWebRTC() {
             // Must return resolved promise to un-brick the promise chain for future chunks
             return Promise.resolve();
         });
-    }, []);
+    }, [releaseWakeLock]);
 
     // Stable ref for handleIncomingData so setupDataChannel always uses latest
     const handleIncomingDataRef = useRef(handleIncomingData);
@@ -325,6 +364,7 @@ export function useWebRTC() {
             useFileSystemApiRef.current = false;
             
             setStatus('transferring');
+            requestWakeLock();
             
             // Tell the sender we are ready
             let resumeOffset = 0;
@@ -353,6 +393,7 @@ export function useWebRTC() {
             // Fallback to memory
             useFileSystemApiRef.current = false;
             setStatus('transferring');
+            requestWakeLock();
             
             let resumeOffset = 0;
             const keys = await localforage.keys();
@@ -371,7 +412,7 @@ export function useWebRTC() {
                 if (dc.readyState === 'open') dc.send(readyStr);
             });
         }
-    }, []);
+    }, [requestWakeLock]);
 
     // --- Data channel setup ---
     const setupDataChannel = useCallback((dc, targetId) => {
@@ -618,6 +659,7 @@ export function useWebRTC() {
         }
 
         setStatus('transferring');
+        requestWakeLock();
         isCancelledRef.current = false;
         isPausedRef.current = false;
 
@@ -694,6 +736,7 @@ export function useWebRTC() {
                 channels.forEach(dc => dc.addEventListener('message', checkReady));
             });
             setStatus('transferring');
+            requestWakeLock();
 
             // Stream the file — read chunks directly from the browser's file stream, with fallback for older browsers
             let reader;
@@ -821,6 +864,12 @@ export function useWebRTC() {
                 console.error('[WebRTC] Error during send stream loop:', err);
                 setStatus('error');
                 setErrorMsg('Error reading or encrypting file chunk: ' + err.message);
+                releaseWakeLock();
+                return;
+            }
+
+            if (isCancelledRef.current) {
+                releaseWakeLock();
                 return;
             }
 
@@ -845,7 +894,8 @@ export function useWebRTC() {
         }
         
         setStatus('success');
-    }, []);
+        releaseWakeLock();
+    }, [requestWakeLock, releaseWakeLock]);
 
     // --- Join session (receiver) ---
     const joinSession = useCallback(async (pin, password = '', keyHex = '') => {
@@ -915,6 +965,9 @@ export function useWebRTC() {
     // --- Cancel / cleanup ---
     const doCancel = useCallback(() => {
         isCancelledRef.current = true;
+        isPausedRef.current = false;
+        releaseWakeLock();
+        
         Object.values(dataChannelsRef.current).forEach(dc => {
             try { dc.close(); } catch (e) { /* ignore */ }
         });
