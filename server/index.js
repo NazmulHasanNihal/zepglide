@@ -4,6 +4,11 @@ import crypto from 'crypto';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import { supabase } from './supabase.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const httpServer = createServer(app);
@@ -771,6 +776,14 @@ app.post('/api/admin/broadcast', async (req, res) => {
   io.emit('global-broadcast', { message, time: new Date().toISOString() });
   
   res.json({ success: true });
+});
+
+// Serve the static React frontend from the dist folder
+app.use(express.static(path.join(__dirname, '../dist')));
+
+// Catch-all route to serve index.html for React Router
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
 httpServer.listen(port, () => {

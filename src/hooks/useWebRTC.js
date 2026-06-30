@@ -27,7 +27,7 @@ const importKey = async (hexKey) => {
 };
 
 // --- High-Performance Transfer Constants ---
-const SEND_CHUNK_SIZE = 65536;            // 64KB — maximum safe size for WebRTC over TURN to prevent drops
+const SEND_CHUNK_SIZE = 16384;            // 16KB — maximum safe size for WebRTC over TURN to prevent drops
 const HIGH_WATER_MARK = 2 * 1024 * 1024;  // 2MB — prevents SCTP overflow and memory spikes
 const LOW_WATER_MARK = 512 * 1024;        // 512KB — resume threshold
 const UI_THROTTLE_MS = 150;               // Update progress bar ~7x/sec (less React overhead)
@@ -37,6 +37,8 @@ const SIGNAL_URL = import.meta.env.VITE_SIGNAL_URL || import.meta.env.VITE_API_U
 
 // --- ICE Servers: STUN + TURN for universal connectivity ---
 const ICE_SERVERS = [
+    // Cloudflare STUN (extremely reliable)
+    { urls: 'stun:stun.cloudflare.com:3478' },
     // Google STUN (fast, free, reliable)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
